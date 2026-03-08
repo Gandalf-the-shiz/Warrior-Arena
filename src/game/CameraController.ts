@@ -27,7 +27,16 @@ export class CameraController {
     private readonly input: InputManager,
     private readonly physics: PhysicsWorld,
   ) {
-    this.currentPosition.set(0, 5, 8);
+    // Place the camera behind and above the initial player position so the
+    // first frame already shows the arena rather than a transitioning blur.
+    const initialLookAt = new THREE.Vector3(0, 3, 0); // player (0,2,0) + 1 Y
+    const yawQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, this.yaw, 0));
+    const pitchQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.pitch, 0, 0));
+    const orbitQ = yawQ.multiply(pitchQ);
+    const worldOffset = this.OFFSET.clone().applyQuaternion(orbitQ);
+    this.currentPosition.copy(initialLookAt).add(worldOffset);
+    this.camera.position.copy(this.currentPosition);
+    (this.camera as THREE.PerspectiveCamera).lookAt(initialLookAt);
   }
 
   /**

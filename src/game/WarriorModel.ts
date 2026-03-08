@@ -1,0 +1,313 @@
+import * as THREE from 'three';
+
+// ── Shared materials ────────────────────────────────────────────────────────
+const MAT_IRON = new THREE.MeshStandardMaterial({
+  color: 0x1a1a2e,
+  metalness: 0.85,
+  roughness: 0.25,
+});
+const MAT_SKIN = new THREE.MeshStandardMaterial({
+  color: 0x2a1f1a,
+  roughness: 0.7,
+});
+const MAT_HELMET = new THREE.MeshStandardMaterial({
+  color: 0x2a2a3a,
+  metalness: 0.8,
+  roughness: 0.3,
+});
+const MAT_VISOR = new THREE.MeshStandardMaterial({
+  color: 0x331111,
+  emissive: new THREE.Color(0x331111),
+  emissiveIntensity: 0.8,
+});
+const MAT_HORN = new THREE.MeshStandardMaterial({
+  color: 0x3a3020,
+  roughness: 0.6,
+});
+const MAT_PAULDRON = new THREE.MeshStandardMaterial({
+  color: 0x222238,
+  metalness: 0.8,
+  roughness: 0.3,
+});
+const MAT_GAUNTLET = new THREE.MeshStandardMaterial({
+  color: 0x151522,
+  metalness: 0.9,
+  roughness: 0.2,
+});
+const MAT_BOOT = new THREE.MeshStandardMaterial({
+  color: 0x1a1510,
+  roughness: 0.8,
+});
+const MAT_CAPE = new THREE.MeshStandardMaterial({
+  color: 0x3a0a0a,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 0.88,
+});
+const MAT_BLADE = new THREE.MeshStandardMaterial({
+  color: 0x8899aa,
+  metalness: 0.95,
+  roughness: 0.1,
+  emissive: new THREE.Color(0x4444ff),
+  emissiveIntensity: 0.5,
+});
+const MAT_GROOVE = new THREE.MeshStandardMaterial({
+  color: 0x445566,
+  metalness: 0.9,
+  roughness: 0.15,
+});
+const MAT_CROSSGUARD = new THREE.MeshStandardMaterial({
+  color: 0x2a2020,
+  metalness: 0.7,
+  roughness: 0.4,
+});
+const MAT_GRIP = new THREE.MeshStandardMaterial({
+  color: 0x1a1510,
+  roughness: 0.8,
+});
+
+function mkMesh(
+  geo: THREE.BufferGeometry,
+  mat: THREE.Material,
+  castShadow = true,
+): THREE.Mesh {
+  const m = new THREE.Mesh(geo, mat);
+  m.castShadow = castShadow;
+  return m;
+}
+
+/**
+ * Procedural warrior character built entirely from Three.js primitives.
+ *
+ * The model root sits at the centre of the physics capsule (y = 0).
+ * Feet are at y ≈ −1.0, top of helmet at y ≈ +1.0, total height ≈ 2.0 units.
+ *
+ * Sub-groups exposed for AnimationStateMachine:
+ *   torsoGroup, headGroup, leftArmGroup, rightArmGroup,
+ *   leftLegGroup, rightLegGroup, swordGroup, capeGroup
+ */
+export class WarriorModel {
+  readonly group: THREE.Group;
+
+  // Animation-accessible sub-groups
+  readonly torsoGroup: THREE.Group;
+  readonly headGroup: THREE.Group;
+  readonly leftArmGroup: THREE.Group;
+  readonly rightArmGroup: THREE.Group;
+  readonly leftLegGroup: THREE.Group;
+  readonly rightLegGroup: THREE.Group;
+  readonly swordGroup: THREE.Group;
+  readonly capeGroup: THREE.Group;
+
+  // Cape geometry reference for vertex-wave animation
+  private readonly capeGeo: THREE.BufferGeometry;
+  private readonly capeBasePositions: Float32Array;
+
+  constructor() {
+    this.group = new THREE.Group();
+
+    // ── Torso ──────────────────────────────────────────────────────────────
+    this.torsoGroup = new THREE.Group();
+    this.torsoGroup.position.set(0, 0.05, 0);
+
+    const torso = mkMesh(new THREE.CapsuleGeometry(0.28, 0.5, 4, 8), MAT_IRON);
+    this.torsoGroup.add(torso);
+
+    // Pauldrons (shoulder armour — half-spheres)
+    const pauldronGeo = new THREE.SphereGeometry(0.22, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.6);
+    const pauldronL = mkMesh(pauldronGeo, MAT_PAULDRON);
+    pauldronL.position.set(-0.44, 0.35, 0);
+    pauldronL.rotation.z = Math.PI / 2;
+    this.torsoGroup.add(pauldronL);
+
+    const pauldronR = mkMesh(pauldronGeo, MAT_PAULDRON);
+    pauldronR.position.set(0.44, 0.35, 0);
+    pauldronR.rotation.z = -Math.PI / 2;
+    this.torsoGroup.add(pauldronR);
+
+    // ── Head ───────────────────────────────────────────────────────────────
+    this.headGroup = new THREE.Group();
+    this.headGroup.position.set(0, 0.72, 0);
+
+    // Base head (mostly hidden by helmet)
+    const head = mkMesh(new THREE.SphereGeometry(0.19, 8, 6), MAT_SKIN);
+    head.scale.set(1, 0.95, 0.95);
+    this.headGroup.add(head);
+
+    // Helmet dome (open-bottom hemisphere covering most of the head)
+    const helmet = mkMesh(
+      new THREE.SphereGeometry(0.215, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62),
+      MAT_HELMET,
+    );
+    helmet.position.set(0, 0.02, 0);
+    this.headGroup.add(helmet);
+
+    // Visor T-slit — horizontal bar
+    const visorH = mkMesh(new THREE.BoxGeometry(0.15, 0.038, 0.05), MAT_VISOR);
+    visorH.position.set(0, 0.03, 0.19);
+    this.headGroup.add(visorH);
+
+    // Nasal guard — vertical bar
+    const nasal = mkMesh(new THREE.BoxGeometry(0.03, 0.11, 0.04), MAT_HELMET);
+    nasal.position.set(0, -0.03, 0.195);
+    this.headGroup.add(nasal);
+
+    // Viking horns
+    const hornGeo = new THREE.ConeGeometry(0.04, 0.22, 6);
+    const hornL = mkMesh(hornGeo, MAT_HORN);
+    hornL.position.set(-0.21, 0.12, 0);
+    hornL.rotation.z = Math.PI / 2 + 0.25;
+    this.headGroup.add(hornL);
+
+    const hornR = mkMesh(hornGeo, MAT_HORN);
+    hornR.position.set(0.21, 0.12, 0);
+    hornR.rotation.z = -(Math.PI / 2 + 0.25);
+    this.headGroup.add(hornR);
+
+    this.torsoGroup.add(this.headGroup);
+
+    // ── Left arm ──────────────────────────────────────────────────────────
+    this.leftArmGroup = new THREE.Group();
+    this.leftArmGroup.position.set(-0.44, 0.28, 0);
+
+    const leftUpper = mkMesh(new THREE.CylinderGeometry(0.08, 0.07, 0.6, 6), MAT_IRON);
+    leftUpper.position.set(0, -0.3, 0);
+    this.leftArmGroup.add(leftUpper);
+
+    const leftGauntlet = mkMesh(new THREE.CylinderGeometry(0.1, 0.09, 0.18, 6), MAT_GAUNTLET);
+    leftGauntlet.position.set(0, -0.66, 0);
+    this.leftArmGroup.add(leftGauntlet);
+
+    this.torsoGroup.add(this.leftArmGroup);
+
+    // ── Right arm ─────────────────────────────────────────────────────────
+    this.rightArmGroup = new THREE.Group();
+    this.rightArmGroup.position.set(0.44, 0.28, 0);
+
+    const rightUpper = mkMesh(new THREE.CylinderGeometry(0.08, 0.07, 0.6, 6), MAT_IRON);
+    rightUpper.position.set(0, -0.3, 0);
+    this.rightArmGroup.add(rightUpper);
+
+    const rightGauntlet = mkMesh(new THREE.CylinderGeometry(0.1, 0.09, 0.18, 6), MAT_GAUNTLET);
+    rightGauntlet.position.set(0, -0.66, 0);
+    this.rightArmGroup.add(rightGauntlet);
+
+    this.torsoGroup.add(this.rightArmGroup);
+
+    // ── Left leg ──────────────────────────────────────────────────────────
+    this.leftLegGroup = new THREE.Group();
+    this.leftLegGroup.position.set(-0.15, -0.22, 0);
+
+    const leftThigh = mkMesh(new THREE.CylinderGeometry(0.11, 0.1, 0.52, 6), MAT_IRON);
+    leftThigh.position.set(0, -0.26, 0);
+    this.leftLegGroup.add(leftThigh);
+
+    const leftKnee = mkMesh(new THREE.BoxGeometry(0.14, 0.1, 0.14), MAT_GAUNTLET);
+    leftKnee.position.set(0, -0.52, 0.02);
+    this.leftLegGroup.add(leftKnee);
+
+    const leftShin = mkMesh(new THREE.CylinderGeometry(0.09, 0.08, 0.42, 6), MAT_IRON);
+    leftShin.position.set(0, -0.72, 0);
+    this.leftLegGroup.add(leftShin);
+
+    const leftBoot = mkMesh(new THREE.CylinderGeometry(0.12, 0.11, 0.2, 6), MAT_BOOT);
+    leftBoot.position.set(0, -0.97, 0);
+    this.leftLegGroup.add(leftBoot);
+
+    this.torsoGroup.add(this.leftLegGroup);
+
+    // ── Right leg ─────────────────────────────────────────────────────────
+    this.rightLegGroup = new THREE.Group();
+    this.rightLegGroup.position.set(0.15, -0.22, 0);
+
+    const rightThigh = mkMesh(new THREE.CylinderGeometry(0.11, 0.1, 0.52, 6), MAT_IRON);
+    rightThigh.position.set(0, -0.26, 0);
+    this.rightLegGroup.add(rightThigh);
+
+    const rightKnee = mkMesh(new THREE.BoxGeometry(0.14, 0.1, 0.14), MAT_GAUNTLET);
+    rightKnee.position.set(0, -0.52, 0.02);
+    this.rightLegGroup.add(rightKnee);
+
+    const rightShin = mkMesh(new THREE.CylinderGeometry(0.09, 0.08, 0.42, 6), MAT_IRON);
+    rightShin.position.set(0, -0.72, 0);
+    this.rightLegGroup.add(rightShin);
+
+    const rightBoot = mkMesh(new THREE.CylinderGeometry(0.12, 0.11, 0.2, 6), MAT_BOOT);
+    rightBoot.position.set(0, -0.97, 0);
+    this.rightLegGroup.add(rightBoot);
+
+    this.torsoGroup.add(this.rightLegGroup);
+
+    // ── Cape ──────────────────────────────────────────────────────────────
+    this.capeGroup = new THREE.Group();
+    this.capeGroup.position.set(0, 0.32, -0.3);
+
+    this.capeGeo = new THREE.PlaneGeometry(0.55, 0.85, 3, 8);
+    const capeMesh = mkMesh(this.capeGeo, MAT_CAPE, false);
+    // Tilt top of cape forward slightly so it hangs from shoulders
+    capeMesh.rotation.x = 0.15;
+    this.capeGroup.add(capeMesh);
+
+    // Store a copy of the initial positions for animation reference
+    const basePosAttr = this.capeGeo.attributes.position as THREE.BufferAttribute;
+    this.capeBasePositions = new Float32Array(basePosAttr.array as Float32Array);
+
+    this.torsoGroup.add(this.capeGroup);
+
+    // ── Greatsword ────────────────────────────────────────────────────────
+    this.swordGroup = new THREE.Group();
+    // Position at end of right arm (gauntlet level)
+    this.swordGroup.position.set(0.0, -0.7, 0.0);
+    this.swordGroup.rotation.x = 0.15;
+
+    // Blade
+    const blade = mkMesh(new THREE.BoxGeometry(0.06, 1.25, 0.012), MAT_BLADE);
+    blade.position.set(0, 0.58, 0);
+    this.swordGroup.add(blade);
+
+    // Blood groove (runs along centre of blade)
+    const groove = mkMesh(new THREE.BoxGeometry(0.016, 1.05, 0.014), MAT_GROOVE);
+    groove.position.set(0, 0.58, 0.007);
+    this.swordGroup.add(groove);
+
+    // Crossguard
+    const crossguard = mkMesh(new THREE.BoxGeometry(0.44, 0.06, 0.055), MAT_CROSSGUARD);
+    crossguard.position.set(0, 0, 0);
+    this.swordGroup.add(crossguard);
+
+    // Grip
+    const grip = mkMesh(new THREE.CylinderGeometry(0.035, 0.03, 0.3, 6), MAT_GRIP);
+    grip.position.set(0, -0.15, 0);
+    this.swordGroup.add(grip);
+
+    // Pommel
+    const pommel = mkMesh(new THREE.SphereGeometry(0.065, 7, 5), MAT_CROSSGUARD);
+    pommel.position.set(0, -0.31, 0);
+    this.swordGroup.add(pommel);
+
+    this.rightArmGroup.add(this.swordGroup);
+
+    // ── Assemble ──────────────────────────────────────────────────────────
+    this.group.add(this.torsoGroup);
+  }
+
+  /**
+   * Animate the cape with a gentle sine-wave vertex deformation.
+   * @param time  Elapsed time in seconds.
+   */
+  updateCape(time: number): void {
+    const posAttr = this.capeGeo.attributes.position as THREE.BufferAttribute;
+    const base = this.capeBasePositions;
+    const count = posAttr.count;
+
+    for (let i = 0; i < count; i++) {
+      const bx = base[i * 3]!;
+      const by = base[i * 3 + 1]!;
+      // More wave amplitude toward the bottom of the cape
+      const tNorm = 1 - (by + 0.425) / 0.85; // 0 at top, 1 at bottom
+      const wave = Math.sin(time * 2.5 + by * 5 + bx * 2) * 0.05 * tNorm;
+      posAttr.setX(i, bx + wave);
+    }
+    posAttr.needsUpdate = true;
+  }
+}
