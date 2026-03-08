@@ -6,6 +6,9 @@ import { GameLoop } from '@/engine/GameLoop';
 import { Arena } from '@/game/Arena';
 import { PlayerController } from '@/game/PlayerController';
 import { CameraController } from '@/game/CameraController';
+import { WaveManager } from '@/game/WaveManager';
+import { CombatSystem } from '@/game/CombatSystem';
+import { VFXManager } from '@/game/VFXManager';
 import { HUD } from '@/ui/HUD';
 
 // ── Loading / error overlay helpers ───────────────────────────────────────
@@ -84,6 +87,11 @@ async function main(): Promise<void> {
   );
   const camera = new CameraController(renderer.camera, input, physics);
 
+  // ── Gameplay systems ───────────────────────────────────────────────────
+  const vfx = new VFXManager(renderer.scene, camera);
+  const combat = new CombatSystem();
+  const waves = new WaveManager(renderer.scene, physics, hud);
+
   // ── Pre-warm physics so player settles on the ground before first render
   for (let i = 0; i < 30; i++) {
     physics.step();
@@ -96,26 +104,55 @@ async function main(): Promise<void> {
   loading.remove();
 
   // Seed HUD with initial values
-  hud.updateHealth(100, 100);
-  hud.updateStamina(100, 100);
+  hud.updateHealth(player.hp, player.maxHp);
+  hud.updateStamina(player.stamina, player.maxStamina);
   hud.updateWave(1);
   hud.updateKills(0);
 
   let elapsed = 0;
 
+  // Hitstop: when > 0 the game freezes (camera and rendering still run)
+  let hitstopRemaining = 0;
+
   // ── Game loop ──────────────────────────────────────────────────────────
   const loop = new GameLoop(
     // onUpdate  (variable timestep — mesh sync, lerp, camera)
     (delta) => {
+      // Always advance elapsed so torches / cape still animate during hitstop
       elapsed += delta;
       arena.update(elapsed);
+
+      if (hitstopRemaining > 0) {
+        hitstopRemaining = Math.max(0, hitstopRemaining - delta);
+        // Camera still tracks smoothly during freeze
+        camera.update(player.getPosition(), delta);
+        return;
+      }
+
       player.update(delta);
       camera.update(player.getPosition(), delta);
+      waves.update(delta, player.getPosition());
+
+      // Combat hit-detection + VFX
+      combat.update(
+        player,
+        waves.enemies,
+        vfx,
+        (duration) => { hitstopRemaining = Math.max(hitstopRemaining, duration); },
+      );
+
+      vfx.update(delta);
+
+      // Sync HUD every frame
+      hud.updateHealth(player.hp, player.maxHp);
+      hud.updateStamina(player.stamina, player.maxStamina);
     },
     // onFixedUpdate  (deterministic 60 Hz physics + input → velocity)
     () => {
-      // Pass current camera yaw so movement is always camera-relative
+      if (hitstopRemaining > 0) return;
+
       player.fixedUpdate(camera.yaw);
+      waves.fixedUpdate(player.getPosition());
       physics.step();
     },
     // onRender

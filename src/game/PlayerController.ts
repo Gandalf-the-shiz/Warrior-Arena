@@ -8,6 +8,14 @@ import { AnimationStateMachine, AnimState } from '@/game/AnimationStateMachine';
 const MOVE_SPEED = 7;
 const JUMP_IMPULSE = 8;
 const ROTATION_LERP = 0.12;
+const FIXED_DT = 1 / 60;
+
+// Stamina constants
+const MAX_STAMINA = 100;
+const STAMINA_REGEN_RATE = 20; // per second
+const DODGE_COST = 25;
+const HEAVY_ATTACK_COST = 30;
+const STAMINA_REGEN_PAUSE = 0.5; // seconds after spending
 
 // Footstep dust particle constants
 const DUST_PARTICLE_COUNT = 18;
@@ -35,7 +43,23 @@ export class PlayerController {
 
   readonly body: RAPIER.RigidBody;
   private readonly warrior: WarriorModel;
-  private readonly anim: AnimationStateMachine;
+  readonly anim: AnimationStateMachine;
+
+  // ── Combat stats ─────────────────────────────────────────────────────────
+  hp = 100;
+  readonly maxHp = 100;
+  isDead = false;
+
+  // ── Stamina ───────────────────────────────────────────────────────────────
+  stamina = MAX_STAMINA;
+  readonly maxStamina = MAX_STAMINA;
+  private staminaRegenPauseTimer = 0;
+
+  // ── Invincibility (after taking a hit) ────────────────────────────────────
+  private invincibilityTimer = 0;
+
+  // ── Attack combo tracking ─────────────────────────────────────────────────
+  private lightAttackIndex = 0;
 
   private isGrounded = false;
   private readonly targetRotation = new THREE.Quaternion();
@@ -80,6 +104,20 @@ export class PlayerController {
    * Applies camera-relative velocity so that movement is deterministic at 60 Hz.
    */
   fixedUpdate(cameraYaw: number): void {
+    if (this.isDead) return;
+
+    // ── Stamina regen ─────────────────────────────────────────────────────
+    if (this.staminaRegenPauseTimer > 0) {
+      this.staminaRegenPauseTimer -= FIXED_DT;
+    } else {
+      this.stamina = Math.min(this.maxStamina, this.stamina + STAMINA_REGEN_RATE * FIXED_DT);
+    }
+
+    // ── Invincibility window countdown ───────────────────────────────────
+    if (this.invincibilityTimer > 0) {
+      this.invincibilityTimer -= FIXED_DT;
+    }
+
     this.checkGrounded();
 
     const move = this.input.getMovementVector();
@@ -116,6 +154,12 @@ export class PlayerController {
    * Syncs mesh to physics, drives animations and particles.
    */
   update(delta: number): void {
+    if (this.isDead) {
+      const elapsed = performance.now() / 1000;
+      this.anim.update(delta, elapsed, 0);
+      return;
+    }
+
     const pos = this.body.translation();
     this.warrior.group.position.set(pos.x, pos.y, pos.z);
     this.warrior.group.quaternion.slerp(this.targetRotation, ROTATION_LERP);
@@ -134,10 +178,21 @@ export class PlayerController {
     ].includes(current);
 
     if (!isAttacking && current !== AnimState.DEATH && current !== AnimState.HIT) {
-      if (this.input.isDodging()) {
+      if (this.input.isDodging() && this.stamina >= DODGE_COST) {
         this.anim.setState(AnimState.DODGE);
+        this.consumeStamina(DODGE_COST);
+      } else if (this.input.isHeavyAttacking() && this.stamina >= HEAVY_ATTACK_COST) {
+        this.anim.setState(AnimState.ATTACK_HEAVY);
+        this.consumeStamina(HEAVY_ATTACK_COST);
+        this.lightAttackIndex = 0;
       } else if (this.input.isAttacking()) {
-        this.anim.setState(AnimState.ATTACK_LIGHT_1);
+        const lightStates: AnimState[] = [
+          AnimState.ATTACK_LIGHT_1,
+          AnimState.ATTACK_LIGHT_2,
+          AnimState.ATTACK_LIGHT_3,
+        ];
+        this.anim.setState(lightStates[this.lightAttackIndex % 3]!);
+        this.lightAttackIndex++;
       } else if (isMoving) {
         this.anim.setState(AnimState.RUN);
       } else {
@@ -173,7 +228,69 @@ export class PlayerController {
     return new THREE.Vector3(p.x, p.y, p.z);
   }
 
+  /** World-space forward direction of the player (the direction they face). */
+  getForward(): THREE.Vector3 {
+    const fwd = new THREE.Vector3(0, 0, 1);
+    fwd.applyQuaternion(this.mesh.quaternion);
+    return fwd;
+  }
+
+  /**
+   * Returns info about the current attack if in the active damage window,
+   * or null if not attacking / not yet in the active window.
+   */
+  getAttackHitInfo(): { damage: number; forward: THREE.Vector3 } | null {
+    const progress = this.anim.getStateProgress();
+    const state = this.anim.currentState;
+
+    let inWindow = false;
+    let damage = 0;
+
+    switch (state) {
+      case AnimState.ATTACK_LIGHT_1:
+      case AnimState.ATTACK_LIGHT_2:
+        inWindow = progress >= 0.3 && progress <= 0.8;
+        damage = 15;
+        break;
+      case AnimState.ATTACK_LIGHT_3:
+        inWindow = progress >= 0.45 && progress <= 0.85;
+        damage = 15;
+        break;
+      case AnimState.ATTACK_HEAVY:
+        inWindow = progress >= 0.15 && progress <= 0.85;
+        damage = 40;
+        break;
+      default:
+        return null;
+    }
+
+    if (!inWindow) return null;
+    return { damage, forward: this.getForward() };
+  }
+
+  /**
+   * Apply damage to the player, honouring the invincibility window.
+   */
+  takeDamage(amount: number): void {
+    if (this.isDead || this.invincibilityTimer > 0) return;
+
+    this.hp = Math.max(0, this.hp - amount);
+    this.invincibilityTimer = 0.5;
+
+    if (this.hp <= 0) {
+      this.isDead = true;
+      this.anim.setState(AnimState.DEATH);
+    } else {
+      this.anim.setState(AnimState.HIT);
+    }
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────────
+
+  private consumeStamina(amount: number): void {
+    this.stamina = Math.max(0, this.stamina - amount);
+    this.staminaRegenPauseTimer = STAMINA_REGEN_PAUSE;
+  }
 
   private checkGrounded(): void {
     const pos = this.body.translation();

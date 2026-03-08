@@ -12,6 +12,7 @@ export class InputManager {
   private mouseDeltaX = 0;
   private mouseDeltaY = 0;
   private mouseAttack = false;
+  private mouseHeavyAttack = false;
   private pointerLocked = false;
 
   // ── Touch / virtual joystick ───────────────────────────────────────────
@@ -84,6 +85,15 @@ export class InputManager {
     return val;
   }
 
+  /** Right-click or E key — heavy attack (costs stamina). */
+  isHeavyAttacking(): boolean {
+    const val = this.mouseHeavyAttack || this.keys['KeyE'] === true;
+    this.mouseHeavyAttack = false;
+    // KeyE is edge-triggered: consume it so it fires once per press
+    if (this.keys['KeyE']) this.keys['KeyE'] = false;
+    return val;
+  }
+
   /** Mouse-delta in pixels since the last frame (pointer-lock). */
   getMouseDelta(): { x: number; y: number } {
     const delta = { x: this.mouseDeltaX, y: this.mouseDeltaY };
@@ -135,10 +145,13 @@ export class InputManager {
       }
     });
 
-    // Left-click = light attack when locked
+    // Left-click = light attack, right-click = heavy attack when locked
     window.addEventListener('mousedown', (e) => {
       if (this.pointerLocked && e.button === 0) {
         this.mouseAttack = true;
+      }
+      if (this.pointerLocked && e.button === 2) {
+        this.mouseHeavyAttack = true;
       }
     });
   }

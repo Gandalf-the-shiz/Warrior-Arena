@@ -19,6 +19,12 @@ export class CameraController {
   private readonly targetPosition = new THREE.Vector3();
   private readonly currentPosition = new THREE.Vector3();
 
+  // Camera shake state
+  private shakeIntensity = 0;
+  private shakeDuration = 0;
+  private shakeTimer = 0;
+  private readonly shakeOffset = new THREE.Vector3();
+
   private frameCount = 0;
   // Skip collision avoidance for the first few frames to avoid physics-settle
   // artifacts pushing the camera into a bad initial position.
@@ -45,11 +51,25 @@ export class CameraController {
   }
 
   /**
+   * Trigger a camera shake.
+   * @param intensity  Maximum offset in world units.
+   * @param duration   Duration in seconds over which the shake decays.
+   */
+  shake(intensity: number, duration: number): void {
+    // Accumulate — take the stronger shake if one is already running
+    if (intensity > this.shakeIntensity) {
+      this.shakeIntensity = intensity;
+      this.shakeDuration = duration;
+      this.shakeTimer = 0;
+    }
+  }
+
+  /**
    * Called every visual frame.
    * @param playerPos  World-space position of the player.
    * @param delta      Frame delta time (seconds).
    */
-  update(playerPos: THREE.Vector3, _delta: number): void {
+  update(playerPos: THREE.Vector3, delta: number): void {
     // ── Rotate from mouse / touch ─────────────────────────────────────────
     const mouse = this.input.getMouseDelta();
     this.yaw -= mouse.x * SENSITIVITY;
@@ -85,7 +105,22 @@ export class CameraController {
 
     // ── Smooth follow ─────────────────────────────────────────────────────
     this.currentPosition.lerp(this.targetPosition, CAM_LERP);
-    this.camera.position.copy(this.currentPosition);
+
+    // ── Camera shake ──────────────────────────────────────────────────────
+    if (this.shakeTimer < this.shakeDuration) {
+      this.shakeTimer += delta;
+      const decay = 1 - Math.min(this.shakeTimer / this.shakeDuration, 1);
+      const s = this.shakeIntensity * decay;
+      this.shakeOffset.set(
+        (Math.random() - 0.5) * 2 * s,
+        (Math.random() - 0.5) * 2 * s,
+        (Math.random() - 0.5) * 2 * s,
+      );
+    } else {
+      this.shakeOffset.set(0, 0, 0);
+    }
+
+    this.camera.position.copy(this.currentPosition).add(this.shakeOffset);
     (this.camera as THREE.PerspectiveCamera).lookAt(lookAt);
   }
 }

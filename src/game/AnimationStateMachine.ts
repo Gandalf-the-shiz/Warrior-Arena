@@ -53,6 +53,16 @@ export class AnimationStateMachine {
   }
 
   /**
+   * Returns 0–1 progress through the current non-looping state.
+   * Returns 0 for infinite / looping states (IDLE, RUN).
+   */
+  getStateProgress(): number {
+    const cfg = STATE_CONFIG[this.state];
+    if (cfg.loop || cfg.duration === Infinity) return 0;
+    return Math.min(this.stateTime / cfg.duration, 1);
+  }
+
+  /**
    * Transition to a new state.  Non-looping states that are still playing will
    * be interrupted by anything except themselves (prevents spamming).
    */
