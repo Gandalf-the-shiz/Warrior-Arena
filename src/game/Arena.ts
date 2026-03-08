@@ -47,7 +47,7 @@ export class Arena {
     const RADIUS = 30;
     const geo = new THREE.CylinderGeometry(RADIUS, RADIUS, 0.4, 64);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x786a5e,   // notably lighter warm stone — floor must read clearly
+      color: 0xb09e8c,   // bright warm stone — floor must be clearly readable
       roughness: 0.88,
       metalness: 0.04,
     });
@@ -65,7 +65,7 @@ export class Arena {
 
   private buildPillars(): void {
     const pillarMat = new THREE.MeshStandardMaterial({
-      color: 0x908278,   // lighter stone — clearly distinct from the floor
+      color: 0xb8a898,   // lighter stone — clearly distinct from floor and background
       roughness: 0.82,
       metalness: 0.04,
     });
@@ -109,7 +109,7 @@ export class Arena {
   // ── Torches ──────────────────────────────────────────────────────────────
 
   private addTorch(x: number, y: number, z: number): void {
-    const light = new THREE.PointLight(0xff6622, 22.0, 50, 2);
+    const light = new THREE.PointLight(0xff6622, 30.0, 55, 2);
     light.position.set(x, y, z);
     light.castShadow = false; // too many shadow maps — skip for performance
     this.scene.add(light);
@@ -129,8 +129,8 @@ export class Arena {
     this.torches.push({
       light,
       speed: 2 + Math.random() * 3,
-      base: 22.0,
-      flicker: 3.0,
+      base: 30.0,
+      flicker: 4.0,
     });
 
     // Create ember particle system for this torch
@@ -141,7 +141,7 @@ export class Arena {
 
   private buildLighting(): void {
     // Pale moonlight — raised to ensure the arena floor is always readable
-    const moon = new THREE.DirectionalLight(0x7799dd, 5.5);
+    const moon = new THREE.DirectionalLight(0x7799dd, 8.0);
     moon.position.set(20, 40, 10);
     moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
@@ -155,23 +155,30 @@ export class Arena {
     this.scene.add(moon);
 
     // Warm ambient — lifts even the darkest shadowed surfaces
-    const ambient = new THREE.AmbientLight(0x6655aa, 3.0);
+    const ambient = new THREE.AmbientLight(0x7766bb, 6.0);
     this.scene.add(ambient);
 
     // Hemisphere light — brighter cool sky, warm volcanic ground bounce
-    const hemi = new THREE.HemisphereLight(0x7788cc, 0x553300, 2.5);
+    const hemi = new THREE.HemisphereLight(0x8899dd, 0x664422, 4.5);
     this.scene.add(hemi);
 
     // Fill light from opposite side for depth/contrast
-    const fill = new THREE.DirectionalLight(0x664433, 2.0);
+    const fill = new THREE.DirectionalLight(0x664433, 3.5);
     fill.position.set(-15, 10, -20);
     this.scene.add(fill);
 
-    // Center combat-zone fill — a soft overhead light ensures the player and
-    // enemies are illuminated regardless of torch distance.
-    const centerFill = new THREE.PointLight(0xfff0dd, 6.0, 70, 1.5);
+    // Center combat-zone fill — broad soft overhead light so the player and
+    // enemies are clearly illuminated across the full combat area.
+    // decay=1.0 (linear) gives much wider coverage than decay=2.
+    const centerFill = new THREE.PointLight(0xfff0dd, 20.0, 80, 1.0);
     centerFill.position.set(0, 12, 0);
     this.scene.add(centerFill);
+
+    // Secondary low-angle center fill to lift shadowed undersides and add
+    // warm ground-bounce for better silhouette separation.
+    const groundFill = new THREE.PointLight(0xdd9966, 8.0, 50, 1.0);
+    groundFill.position.set(0, 2, 0);
+    this.scene.add(groundFill);
   }
 
   // ── Invisible boundary walls ─────────────────────────────────────────────
