@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { PhysicsWorld } from '@/engine/PhysicsWorld';
-import { Enemy, EnemyType } from '@/game/Enemy';
+import { Enemy } from '@/game/Enemy';
 import { HUD } from '@/ui/HUD';
+import { composeWave } from '@/game/WaveDirector';
 
 // Radius at which enemies spawn around the arena edge
 const SPAWN_RADIUS = 20;
@@ -10,7 +11,8 @@ const SPAWN_RADIUS = 20;
  * Manages enemy waves: spawning, tracking kills, wave-banner display, and
  * wiring kill/wave counts to the HUD.
  *
- * Wave formula: `count = Math.min(2 + wave * 2, 15)`.
+ * Enemy composition is delegated to WaveDirector, which uses a
+ * budget/archetype model to produce deliberate, role-aware encounter rosters.
  * A 3-second inter-wave pause is shown with a large "WAVE X" banner.
  */
 export class WaveManager {
@@ -132,43 +134,29 @@ export class WaveManager {
   }
 
   private spawnEnemies(): void {
-    const count = Math.min(2 + this._currentWave * 2, 15);
+    // Ask the director for a role-aware enemy roster for this wave
+    const roster = composeWave(this._currentWave);
 
+    // Shuffle so enemy types are spread around the arena perimeter, not clumped
+    for (let i = roster.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [roster[i], roster[j]] = [roster[j]!, roster[i]!];
+    }
+
+    const count = roster.length;
     for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
-      const r = SPAWN_RADIUS + (Math.random() - 0.5) * 4;
-      const sx = Math.cos(angle) * r;
-      const sz = Math.sin(angle) * r;
+      // Even angular distribution with a small random offset per slot to
+      // break perfect symmetry without causing clustering
+      const slotAngle = (i / count) * Math.PI * 2;
+      const jitter    = (Math.random() - 0.5) * (Math.PI * 2 / count) * 0.5;
+      const angle     = slotAngle + jitter;
+      const r         = SPAWN_RADIUS + (Math.random() - 0.5) * 4;
+      const sx        = Math.cos(angle) * r;
+      const sz        = Math.sin(angle) * r;
 
-      const type = this.pickEnemyType();
-      const enemy = new Enemy(this.scene, this.physics, sx, sz, type);
+      const enemy = new Enemy(this.scene, this.physics, sx, sz, roster[i]!);
       this.activeEnemies.push(enemy);
     }
-  }
-
-  /** Choose enemy type based on current wave. */
-  private pickEnemyType(): EnemyType {
-    const wave = this._currentWave;
-    // Wave 6+: all three archetypes in full rotation
-    if (wave >= 6) {
-      const r = Math.random();
-      if (r < 0.40) return EnemyType.SKELETON;
-      if (r < 0.72) return EnemyType.GHOUL;
-      return EnemyType.BRUTE;
-    }
-    // Wave 4–5: ghouls dominant, first brutes trickle in
-    if (wave >= 4) {
-      const r = Math.random();
-      if (r < 0.38) return EnemyType.SKELETON;
-      if (r < 0.78) return EnemyType.GHOUL;
-      return EnemyType.BRUTE;
-    }
-    // Wave 3: ghouls introduced alongside skeletons
-    if (wave >= 3) {
-      return Math.random() < 0.60 ? EnemyType.SKELETON : EnemyType.GHOUL;
-    }
-    // Wave 1–2: skeletons only — teaches baseline spacing and timing
-    return EnemyType.SKELETON;
   }
 
   private showBanner(text: string, duration: number): void {
