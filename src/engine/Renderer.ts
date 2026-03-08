@@ -23,16 +23,19 @@ export class Renderer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Colour grading — dark cinematic look, exposure pushed for play readability
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 2.6;
+    // Colour grading — Reinhard avoids ACES's crushed-dark midtones; exposure
+    // raised high so dim-material dark-fantasy surfaces stay readable.
+    this.renderer.toneMapping = THREE.ReinhardToneMapping;
+    this.renderer.toneMappingExposure = 3.5;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     // ── Scene ───────────────────────────────────────────────────────────────
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0d0d1c);
-    // Reduced fog — keeps atmosphere without eating combatant/floor visibility
-    this.scene.fog = new THREE.FogExp2(0x0f0f1e, 0.006);
+    // Slightly lifted background so geometry doesn't vanish into pure black.
+    this.scene.background = new THREE.Color(0x1a1a2e);
+    // Lighter fog colour and lower density — preserves atmosphere without
+    // swallowing the floor and pillars.
+    this.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.004);
 
     // ── Camera ──────────────────────────────────────────────────────────────
     this.camera = new THREE.PerspectiveCamera(
