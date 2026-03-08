@@ -140,6 +140,12 @@ async function main(): Promise<void> {
   // Hitstop: when > 0 the game freezes (camera and rendering still run)
   let hitstopRemaining = 0;
 
+  // ── Style + score tracking ─────────────────────────────────────────────
+  let totalScore = 0;
+  let prevKills = 0;
+  let prevStyleRank = styleMeter.rank;
+  const BASE_SCORE_PER_KILL = 100;
+
   // ── Game loop ──────────────────────────────────────────────────────────
   const loop = new GameLoop(
     // onUpdate  (variable timestep — mesh sync, lerp, camera)
@@ -190,10 +196,26 @@ async function main(): Promise<void> {
       styleMeter.update(delta);
       vfx.update(delta);
 
+      // ── Style-rank-based score accumulation ───────────────────────────
+      const newKills = waves.totalKills - prevKills;
+      if (newKills > 0) {
+        totalScore += Math.round(newKills * BASE_SCORE_PER_KILL * styleMeter.scoreMultiplier);
+        prevKills = waves.totalKills;
+        hud.updateScore(totalScore);
+      }
+
+      // Pulse + combo update when rank changes
+      const currentRank = styleMeter.rank;
+      if (currentRank !== prevStyleRank) {
+        prevStyleRank = currentRank;
+        hud.pulseRank();
+      }
+
       // Sync HUD every frame
       hud.updateHealth(player.hp, player.maxHp);
       hud.updateStamina(player.stamina, player.maxStamina);
       hud.updateStyleRank(styleMeter.rank);
+      hud.updateCombo(styleMeter.combo, styleMeter.scoreMultiplier);
     },
     // onFixedUpdate  (deterministic 60 Hz physics + input → velocity)
     () => {
