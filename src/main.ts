@@ -9,6 +9,7 @@ import { CameraController } from '@/game/CameraController';
 import { WaveManager } from '@/game/WaveManager';
 import { CombatSystem } from '@/game/CombatSystem';
 import { VFXManager } from '@/game/VFXManager';
+import { StyleMeter } from '@/game/StyleMeter';
 import { HUD } from '@/ui/HUD';
 
 // ── Loading / error overlay helpers ───────────────────────────────────────
@@ -91,6 +92,7 @@ async function main(): Promise<void> {
   const vfx = new VFXManager(renderer.scene, camera);
   const combat = new CombatSystem();
   const waves = new WaveManager(renderer.scene, physics, hud);
+  const styleMeter = new StyleMeter();
 
   // ── Pre-warm physics so player settles on the ground before first render
   for (let i = 0; i < 30; i++) {
@@ -120,7 +122,7 @@ async function main(): Promise<void> {
     (delta) => {
       // Always advance elapsed so torches / cape still animate during hitstop
       elapsed += delta;
-      arena.update(elapsed);
+      arena.update(elapsed, delta);
 
       if (hitstopRemaining > 0) {
         hitstopRemaining = Math.max(0, hitstopRemaining - delta);
@@ -139,13 +141,16 @@ async function main(): Promise<void> {
         waves.enemies,
         vfx,
         (duration) => { hitstopRemaining = Math.max(hitstopRemaining, duration); },
+        styleMeter,
       );
 
+      styleMeter.update(delta);
       vfx.update(delta);
 
       // Sync HUD every frame
       hud.updateHealth(player.hp, player.maxHp);
       hud.updateStamina(player.stamina, player.maxStamina);
+      hud.updateStyleRank(styleMeter.rank);
     },
     // onFixedUpdate  (deterministic 60 Hz physics + input → velocity)
     () => {

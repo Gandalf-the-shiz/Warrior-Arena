@@ -110,6 +110,30 @@
         color: #e8d5a0;
       }
 
+      /* Style meter — right side below kill counter */
+      #style-meter {
+        position: absolute;
+        top: 60px;
+        right: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+      }
+      #style-label {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #777;
+      }
+      #style-rank {
+        font-size: 52px;
+        font-weight: bold;
+        line-height: 1;
+        color: #888;
+        transition: color 0.2s ease, text-shadow 0.2s ease;
+      }
+
       /* ── Mobile Touch Controls ── */
       #mobile-controls {
         display: none;
@@ -193,6 +217,11 @@
       <div id="kill-counter">
         <span class="skull">💀</span>
         <span id="kill-count">0</span>
+      </div>
+
+      <div id="style-meter">
+        <div id="style-label">Style</div>
+        <div id="style-rank">D</div>
       </div>
 
       <!-- Mobile Controls -->

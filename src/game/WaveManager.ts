@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PhysicsWorld } from '@/engine/PhysicsWorld';
-import { Enemy } from '@/game/Enemy';
+import { Enemy, EnemyType } from '@/game/Enemy';
 import { HUD } from '@/ui/HUD';
 
 // Radius at which enemies spawn around the arena edge
@@ -140,9 +140,25 @@ export class WaveManager {
       const sx = Math.cos(angle) * r;
       const sz = Math.sin(angle) * r;
 
-      const enemy = new Enemy(this.scene, this.physics, sx, sz);
+      const type = this.pickEnemyType();
+      const enemy = new Enemy(this.scene, this.physics, sx, sz, type);
       this.activeEnemies.push(enemy);
     }
+  }
+
+  /** Choose enemy type based on current wave. */
+  private pickEnemyType(): EnemyType {
+    const wave = this._currentWave;
+    if (wave >= 5) {
+      const r = Math.random();
+      if (r < 0.45) return EnemyType.SKELETON;
+      if (r < 0.75) return EnemyType.GHOUL;
+      return EnemyType.BRUTE;
+    }
+    if (wave >= 3) {
+      return Math.random() < 0.5 ? EnemyType.SKELETON : EnemyType.GHOUL;
+    }
+    return EnemyType.SKELETON;
   }
 
   private showBanner(text: string, duration: number): void {

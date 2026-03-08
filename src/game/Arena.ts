@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 import { PhysicsWorld } from '@/engine/PhysicsWorld';
 
+// Per-torch ember particle burst
+interface TorchEmbers {
+  points: THREE.Points;
+  velocities: Float32Array; // 3 floats per particle
+  ages: Float32Array;
+  life: number;
+  origins?: Float32Array;   // spawn positions, initialised on first update
+}
+
 /**
  * The gladiator arena: ground, broken pillars, torchlight and invisible walls.
  */
@@ -10,6 +19,8 @@ export class Arena {
     speed: number;
     base: number;
   }> = [];
+
+  private readonly emberSystems: TorchEmbers[] = [];
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -21,11 +32,12 @@ export class Arena {
     this.buildBoundaryWalls();
   }
 
-  /** Call every frame with elapsed time (seconds) to animate torches. */
-  update(time: number): void {
+  /** Call every frame with elapsed time (seconds) and delta to animate torches and particles. */
+  update(time: number, delta = 1 / 60): void {
     for (const torch of this.torches) {
-      torch.light.intensity = torch.base + Math.sin(time * torch.speed) * 0.3;
+      torch.light.intensity = torch.base + Math.sin(time * torch.speed) * 0.5;
     }
+    this.updateEmbers(delta);
   }
 
   // ── Ground ──────────────────────────────────────────────────────────────
@@ -34,7 +46,7 @@ export class Arena {
     const RADIUS = 30;
     const geo = new THREE.CylinderGeometry(RADIUS, RADIUS, 0.4, 64);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x1a1812,
+      color: 0x2a2822,
       roughness: 0.95,
       metalness: 0.05,
     });
@@ -52,7 +64,7 @@ export class Arena {
 
   private buildPillars(): void {
     const pillarMat = new THREE.MeshStandardMaterial({
-      color: 0x28241e,
+      color: 0x3a362e,
       roughness: 0.9,
       metalness: 0.05,
     });
@@ -96,7 +108,7 @@ export class Arena {
   // ── Torches ──────────────────────────────────────────────────────────────
 
   private addTorch(x: number, y: number, z: number): void {
-    const light = new THREE.PointLight(0xff6622, 2.2, 15, 2);
+    const light = new THREE.PointLight(0xff6622, 3.5, 25, 2);
     light.position.set(x, y, z);
     light.castShadow = false; // too many shadow maps — skip for performance
     this.scene.add(light);
@@ -116,15 +128,18 @@ export class Arena {
     this.torches.push({
       light,
       speed: 2 + Math.random() * 3,
-      base: 2.0,
+      base: 3.5,
     });
+
+    // Create ember particle system for this torch
+    this.createEmberSystem(x, y, z);
   }
 
   // ── Lighting ─────────────────────────────────────────────────────────────
 
   private buildLighting(): void {
-    // Pale moonlight
-    const moon = new THREE.DirectionalLight(0x4466aa, 0.6);
+    // Pale moonlight — brighter for better visibility
+    const moon = new THREE.DirectionalLight(0x5577bb, 1.2);
     moon.position.set(20, 40, 10);
     moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
@@ -137,9 +152,13 @@ export class Arena {
     moon.shadow.bias = -0.001;
     this.scene.add(moon);
 
-    // Very dim warm ambient — hints of volcanic heat deep below
-    const ambient = new THREE.AmbientLight(0x221111, 0.3);
+    // Dim warm ambient — hints of volcanic heat deep below
+    const ambient = new THREE.AmbientLight(0x332244, 0.7);
     this.scene.add(ambient);
+
+    // Hemisphere light for sky/ground fill — cool sky, warm ground
+    const hemi = new THREE.HemisphereLight(0x334466, 0x220800, 0.4);
+    this.scene.add(hemi);
   }
 
   // ── Invisible boundary walls ─────────────────────────────────────────────
@@ -169,6 +188,92 @@ export class Arena {
       // Rotate collider to face toward the arena centre
       const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, midAngle, 0));
       collider.setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w });
+    }
+  }
+
+  // ── Torch ember particles ────────────────────────────────────────────────
+
+  private createEmberSystem(x: number, y: number, z: number): void {
+    const PARTICLE_COUNT = 12;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(PARTICLE_COUNT * 3);
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      positions[i * 3]     = x + (Math.random() - 0.5) * 0.2;
+      positions[i * 3 + 1] = y + Math.random() * 0.3;
+      positions[i * 3 + 2] = z + (Math.random() - 0.5) * 0.2;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const mat = new THREE.PointsMaterial({
+      color: 0xff6600,
+      size: 0.06,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+
+    const points = new THREE.Points(geo, mat);
+    this.scene.add(points);
+
+    const velocities = new Float32Array(PARTICLE_COUNT * 3);
+    const ages = new Float32Array(PARTICLE_COUNT);
+    const life = 1.2 + Math.random() * 0.8;
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      velocities[i * 3]     = (Math.random() - 0.5) * 0.3;
+      velocities[i * 3 + 1] = 0.4 + Math.random() * 0.8;
+      velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.3;
+      ages[i] = Math.random() * life; // stagger start ages
+    }
+
+    this.emberSystems.push({ points, velocities, ages, life });
+  }
+
+  private updateEmbers(delta: number): void {
+    for (const sys of this.emberSystems) {
+      const posAttr = sys.points.geometry.attributes.position as THREE.BufferAttribute;
+      const count = posAttr.count;
+
+      // Store spawn origins on first use
+      if (!sys.origins) {
+        sys.origins = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          sys.origins[i * 3]     = posAttr.getX(i);
+          sys.origins[i * 3 + 1] = posAttr.getY(i);
+          sys.origins[i * 3 + 2] = posAttr.getZ(i);
+        }
+      }
+      const origins = sys.origins;
+
+      for (let i = 0; i < count; i++) {
+        sys.ages[i] += delta;
+        if (sys.ages[i] >= sys.life) {
+          // Respawn at origin
+          sys.ages[i] = 0;
+          posAttr.setXYZ(i, origins[i * 3]!, origins[i * 3 + 1]!, origins[i * 3 + 2]!);
+          sys.velocities[i * 3]!     = (Math.random() - 0.5) * 0.3;
+          sys.velocities[i * 3 + 1]! = 0.4 + Math.random() * 0.8;
+          sys.velocities[i * 3 + 2]! = (Math.random() - 0.5) * 0.3;
+          continue;
+        }
+
+        const nx = posAttr.getX(i) + sys.velocities[i * 3]!     * delta;
+        const ny = posAttr.getY(i) + sys.velocities[i * 3 + 1]! * delta;
+        const nz = posAttr.getZ(i) + sys.velocities[i * 3 + 2]! * delta;
+        posAttr.setXYZ(i, nx, ny, nz);
+
+        // Mild drag
+        sys.velocities[i * 3]!     *= 0.98;
+        sys.velocities[i * 3 + 2]! *= 0.98;
+      }
+
+      posAttr.needsUpdate = true;
+
+      // Fade out near end of particle life
+      const mat = sys.points.material as THREE.PointsMaterial;
+      const avgAge = Array.from(sys.ages).reduce((a, b) => a + b, 0) / count;
+      mat.opacity = Math.max(0.3, 0.9 * (1 - avgAge / sys.life));
     }
   }
 }
