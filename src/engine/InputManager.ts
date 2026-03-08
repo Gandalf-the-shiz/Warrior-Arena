@@ -35,7 +35,7 @@ export class InputManager {
   constructor(canvas: HTMLCanvasElement) {
     this.bindKeyboard();
     this.bindMouse(canvas);
-    this.bindTouch(canvas);
+    this.bindTouch();
     this.bindAttackButton();
   }
 
@@ -143,74 +143,93 @@ export class InputManager {
     });
   }
 
-  private bindTouch(canvas: HTMLCanvasElement): void {
+  private bindTouch(): void {
     const joystickZone = document.getElementById('joystick-zone');
     const knob = document.getElementById('joystick-knob');
 
-    canvas.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      for (const touch of Array.from(e.changedTouches)) {
-        const isLeft = touch.clientX < window.innerWidth / 2;
-        if (isLeft && this.joystickId === null) {
+    // ── Joystick: bind directly to #joystick-zone so overlay intercepts work
+    if (joystickZone) {
+      joystickZone.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const touch = e.changedTouches[0];
+        if (touch && this.joystickId === null) {
           this.joystickId = touch.identifier;
           this.joystickOriginX = touch.clientX;
           this.joystickOriginY = touch.clientY;
           this.joystickActive = true;
 
-          if (joystickZone) {
-            joystickZone.style.left = `${touch.clientX - 60}px`;
-            joystickZone.style.bottom = '';
-            joystickZone.style.top = `${touch.clientY - 60}px`;
+          joystickZone.style.left = `${touch.clientX - 60}px`;
+          joystickZone.style.bottom = '';
+          joystickZone.style.top = `${touch.clientY - 60}px`;
+        }
+      }, { passive: false });
+
+      joystickZone.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        for (const touch of Array.from(e.changedTouches)) {
+          if (touch.identifier === this.joystickId) {
+            const dx = touch.clientX - this.joystickOriginX;
+            const dy = touch.clientY - this.joystickOriginY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const clamped = Math.min(dist, this.JOYSTICK_RADIUS);
+            const angle = Math.atan2(dy, dx);
+            this.joystickDeltaX = Math.cos(angle) * clamped;
+            this.joystickDeltaY = Math.sin(angle) * clamped;
+
+            if (knob) {
+              knob.style.transform = `translate(calc(-50% + ${this.joystickDeltaX}px), calc(-50% + ${this.joystickDeltaY}px))`;
+            }
           }
-        } else if (!isLeft && this.camTouchId === null) {
+        }
+      }, { passive: false });
+
+      const endJoystick = (e: TouchEvent): void => {
+        for (const touch of Array.from(e.changedTouches)) {
+          if (touch.identifier === this.joystickId) {
+            this.joystickId = null;
+            this.joystickActive = false;
+            this.joystickDeltaX = 0;
+            this.joystickDeltaY = 0;
+            if (knob) {
+              knob.style.transform = 'translate(-50%, -50%)';
+            }
+            joystickZone.style.left = '24px';
+            joystickZone.style.top = '';
+            joystickZone.style.bottom = '24px';
+          }
+        }
+      };
+
+      joystickZone.addEventListener('touchend', endJoystick, { passive: false });
+      joystickZone.addEventListener('touchcancel', endJoystick, { passive: false });
+    }
+
+    // ── Camera rotation: bind to document so right-side touches always register
+    document.addEventListener('touchstart', (e) => {
+      for (const touch of Array.from(e.changedTouches)) {
+        if (touch.clientX >= window.innerWidth / 2 && this.camTouchId === null) {
           this.camTouchId = touch.identifier;
           this.camTouchLastX = touch.clientX;
           this.camTouchLastY = touch.clientY;
         }
       }
-    }, { passive: false });
+    }, { passive: true });
 
-    canvas.addEventListener('touchmove', (e) => {
-      e.preventDefault();
+    document.addEventListener('touchmove', (e) => {
       for (const touch of Array.from(e.changedTouches)) {
-        if (touch.identifier === this.joystickId) {
-          const dx = touch.clientX - this.joystickOriginX;
-          const dy = touch.clientY - this.joystickOriginY;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const clamped = Math.min(dist, this.JOYSTICK_RADIUS);
-          const angle = Math.atan2(dy, dx);
-          this.joystickDeltaX = Math.cos(angle) * clamped;
-          this.joystickDeltaY = Math.sin(angle) * clamped;
-
-          if (knob) {
-            knob.style.transform = `translate(calc(-50% + ${this.joystickDeltaX}px), calc(-50% + ${this.joystickDeltaY}px))`;
-          }
-        } else if (touch.identifier === this.camTouchId) {
+        if (touch.identifier === this.camTouchId) {
           this.camTouchDeltaX += touch.clientX - this.camTouchLastX;
           this.camTouchDeltaY += touch.clientY - this.camTouchLastY;
           this.camTouchLastX = touch.clientX;
           this.camTouchLastY = touch.clientY;
         }
       }
-    }, { passive: false });
+    }, { passive: true });
 
-    const endTouch = (e: TouchEvent): void => {
+    const endCamTouch = (e: TouchEvent): void => {
       for (const touch of Array.from(e.changedTouches)) {
-        if (touch.identifier === this.joystickId) {
-          this.joystickId = null;
-          this.joystickActive = false;
-          this.joystickDeltaX = 0;
-          this.joystickDeltaY = 0;
-          if (knob) {
-            knob.style.transform = 'translate(-50%, -50%)';
-          }
-          // Reset joystick zone position
-          if (joystickZone) {
-            joystickZone.style.left = '24px';
-            joystickZone.style.top = '';
-            joystickZone.style.bottom = '24px';
-          }
-        } else if (touch.identifier === this.camTouchId) {
+        if (touch.identifier === this.camTouchId) {
           this.camTouchId = null;
           this.camTouchDeltaX = 0;
           this.camTouchDeltaY = 0;
@@ -218,8 +237,8 @@ export class InputManager {
       }
     };
 
-    canvas.addEventListener('touchend', endTouch, { passive: false });
-    canvas.addEventListener('touchcancel', endTouch, { passive: false });
+    document.addEventListener('touchend', endCamTouch, { passive: true });
+    document.addEventListener('touchcancel', endCamTouch, { passive: true });
   }
 
   private bindAttackButton(): void {
