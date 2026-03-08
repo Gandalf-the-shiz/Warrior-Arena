@@ -2,22 +2,22 @@ import * as THREE from 'three';
 
 // ── Shared materials ────────────────────────────────────────────────────────
 const MAT_IRON = new THREE.MeshStandardMaterial({
-  color: 0x6060a0,   // lifted blue-steel — visible under dark-fantasy lighting
+  color: 0x7878c0,   // lifted blue-steel — clearly visible under dark-fantasy lighting
   metalness: 0.85,
   roughness: 0.25,
-  emissive: new THREE.Color(0x101030),
-  emissiveIntensity: 0.8,
+  emissive: new THREE.Color(0x181840),
+  emissiveIntensity: 1.5,
 });
 const MAT_SKIN = new THREE.MeshStandardMaterial({
   color: 0x8a6e58,   // readable warm skin tone
   roughness: 0.7,
 });
 const MAT_HELMET = new THREE.MeshStandardMaterial({
-  color: 0x686878,   // medium dark-blue-grey — distinguishable from black
+  color: 0x7878a0,   // medium blue-grey — distinguishable from black and armor
   metalness: 0.8,
   roughness: 0.3,
-  emissive: new THREE.Color(0x101018),
-  emissiveIntensity: 0.6,
+  emissive: new THREE.Color(0x181830),
+  emissiveIntensity: 0.8,
 });
 const MAT_VISOR = new THREE.MeshStandardMaterial({
   color: 0x551111,

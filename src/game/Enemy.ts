@@ -36,17 +36,17 @@ const MAT_EYE = new THREE.MeshStandardMaterial({
 
 // ── Ghoul materials ──────────────────────────────────────────────────────────
 const MAT_GHOUL_BODY = new THREE.MeshStandardMaterial({
-  color: 0x6a8a6a,
+  color: 0x88b088,   // lifted mid-green — clearly readable against stone floor
   roughness: 0.8,
   metalness: 0.0,
 });
 const MAT_GHOUL_JOINT = new THREE.MeshStandardMaterial({
-  color: 0x4a6a4a,
+  color: 0x5a8a5a,   // darker accent joint — still visible
   roughness: 0.85,
   metalness: 0.0,
 });
 const MAT_GHOUL_WEAPON = new THREE.MeshStandardMaterial({
-  color: 0x3a5a3a,
+  color: 0x4a7a4a,   // lifted weapon color
   roughness: 0.9,
   metalness: 0.1,
 });
@@ -59,17 +59,17 @@ const MAT_GHOUL_EYE = new THREE.MeshStandardMaterial({
 
 // ── Brute materials ──────────────────────────────────────────────────────────
 const MAT_BRUTE_BODY = new THREE.MeshStandardMaterial({
-  color: 0x8a4a30,   // lifted reddish-brown — reads as menacing but visible
+  color: 0xb06040,   // bright reddish-brown — menacing and clearly visible
   roughness: 0.7,
   metalness: 0.15,
 });
 const MAT_BRUTE_JOINT = new THREE.MeshStandardMaterial({
-  color: 0x6a3a20,   // darker accent — still visible
+  color: 0x884828,   // darker accent — contrast against body
   roughness: 0.8,
   metalness: 0.1,
 });
 const MAT_BRUTE_WEAPON = new THREE.MeshStandardMaterial({
-  color: 0x5a3030,   // dark but readable against the floor
+  color: 0x744040,   // readable against the floor
   roughness: 0.6,
   metalness: 0.5,
   emissive: new THREE.Color(0x400a00),
