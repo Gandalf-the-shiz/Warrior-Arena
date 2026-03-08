@@ -3,14 +3,12 @@ import { AnimState } from '@/game/AnimationStateMachine';
 import { PlayerController } from '@/game/PlayerController';
 import { Enemy } from '@/game/Enemy';
 import { VFXManager } from '@/game/VFXManager';
+import { StyleMeter } from '@/game/StyleMeter';
 
 // How far in front of the player the sword hitbox centre sits (world units)
 const HIT_RANGE_FORWARD = 2.0;
-// Radius of the spherical hitbox
-const HIT_RADIUS = 1.6;
 
-// ENEMY → PLAYER damage per swing
-const ENEMY_ATTACK_DAMAGE = 10;
+// ENEMY → PLAYER base reach
 const ENEMY_ATTACK_REACH = 2.5;
 
 // Impact parameters by attack weight
@@ -42,17 +40,19 @@ export class CombatSystem {
   /**
    * Run every visual frame (after physics step).
    * @param onHitstop  Callback that pauses the game loop for `duration` seconds.
+   * @param styleMeter Optional style meter to notify on hits.
    */
   update(
     player: PlayerController,
     enemies: readonly Enemy[],
     vfx: VFXManager,
     onHitstop: (duration: number) => void,
+    styleMeter?: StyleMeter,
   ): void {
     if (player.isDead) return;
 
-    this.processPlayerAttacks(player, enemies, vfx, onHitstop);
-    this.processEnemyAttacks(player, enemies, vfx);
+    this.processPlayerAttacks(player, enemies, vfx, onHitstop, styleMeter);
+    this.processEnemyAttacks(player, enemies, vfx, styleMeter);
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
@@ -62,6 +62,7 @@ export class CombatSystem {
     enemies: readonly Enemy[],
     vfx: VFXManager,
     onHitstop: (duration: number) => void,
+    styleMeter?: StyleMeter,
   ): void {
     const hitInfo = player.getAttackHitInfo();
     const playerAttacking = hitInfo !== null;
@@ -92,7 +93,7 @@ export class CombatSystem {
       if (this.hitEnemiesThisSwing.has(enemy)) continue;
 
       const dist = enemy.getPosition().distanceTo(hitCenter);
-      if (dist > HIT_RADIUS) continue;
+      if (dist > hitInfo.hitRadius) continue;
 
       // ── Register hit ──────────────────────────────────────────────────
       this.hitEnemiesThisSwing.add(enemy);
@@ -104,6 +105,7 @@ export class CombatSystem {
       }
 
       enemy.takeDamage(hitInfo.damage, knockbackDir);
+      styleMeter?.registerHit();
 
       // VFX
       const hitPos = enemy.getPosition().clone().add(new THREE.Vector3(0, 0.5, 0));
@@ -125,6 +127,7 @@ export class CombatSystem {
     player: PlayerController,
     enemies: readonly Enemy[],
     vfx: VFXManager,
+    styleMeter?: StyleMeter,
   ): void {
     const playerPos = player.getPosition();
 
@@ -136,9 +139,10 @@ export class CombatSystem {
       if (dist > ENEMY_ATTACK_REACH) continue;
 
       enemy.markDamageDealt();
-      player.takeDamage(ENEMY_ATTACK_DAMAGE);
+      player.takeDamage(enemy.attackDamage);
 
       if (!player.isDead) {
+        styleMeter?.onPlayerDamage();
         // Small shake when player is hit
         vfx.shakeCamera(0.12, 0.2);
       }

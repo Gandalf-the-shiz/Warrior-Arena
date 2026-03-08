@@ -70,7 +70,7 @@ export class AnimationStateMachine {
     if (newState === this.state) return;
 
     const cfg = STATE_CONFIG[newState];
-    if (onComplete) cfg.onComplete = onComplete;
+    cfg.onComplete = onComplete; // Always update — clears stale callbacks when none provided
 
     this.state = newState;
     this.stateTime = 0;

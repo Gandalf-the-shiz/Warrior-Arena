@@ -17,6 +17,10 @@ const DODGE_COST = 25;
 const HEAVY_ATTACK_COST = 30;
 const STAMINA_REGEN_PAUSE = 0.5; // seconds after spending
 
+// Combo system
+const COMBO_WINDOW = 0.4; // seconds to follow-up with next hit
+const DODGE_IFRAME_DURATION = 0.15; // seconds of invincibility at dodge start
+
 // Footstep dust particle constants
 const DUST_PARTICLE_COUNT = 18;
 const DUST_SPAWN_INTERVAL = 0.28; // seconds between bursts while running
@@ -58,8 +62,13 @@ export class PlayerController {
   // ── Invincibility (after taking a hit) ────────────────────────────────────
   private invincibilityTimer = 0;
 
-  // ── Attack combo tracking ─────────────────────────────────────────────────
-  private lightAttackIndex = 0;
+  // ── Combo tracking ────────────────────────────────────────────────────────
+  private comboStep = 0;            // 0 = fresh, 1 = after L1, 2 = after L2
+  private comboWindowTimer = 0;     // countdown until combo window closes
+  private attackInputQueued = false; // buffers attack press during animation
+
+  // ── Dodge i-frames ────────────────────────────────────────────────────────
+  private dodgeIFrameTimer = 0;
 
   private isGrounded = false;
   private readonly targetRotation = new THREE.Quaternion();
@@ -164,6 +173,29 @@ export class PlayerController {
     this.warrior.group.position.set(pos.x, pos.y, pos.z);
     this.warrior.group.quaternion.slerp(this.targetRotation, ROTATION_LERP);
 
+    // ── Buffer attack input early (consume the edge-triggered flag) ───────
+    if (this.input.isAttacking()) {
+      this.attackInputQueued = true;
+    }
+
+    // ── Decay combo window ─────────────────────────────────────────────────
+    if (this.comboWindowTimer > 0) {
+      this.comboWindowTimer -= delta;
+      if (this.comboWindowTimer <= 0) {
+        this.comboWindowTimer = 0;
+        this.comboStep = 0;
+      }
+    }
+
+    // ── Decay dodge i-frames ───────────────────────────────────────────────
+    if (this.dodgeIFrameTimer > 0) {
+      this.dodgeIFrameTimer -= delta;
+      if (this.dodgeIFrameTimer <= 0) {
+        this.dodgeIFrameTimer = 0;
+        this.warrior.setDodgeTransparency(false);
+      }
+    }
+
     // ── Determine animation state ─────────────────────────────────────────
     const move = this.input.getMovementVector();
     const speed = Math.sqrt(move.x * move.x + move.z * move.z);
@@ -181,18 +213,23 @@ export class PlayerController {
       if (this.input.isDodging() && this.stamina >= DODGE_COST) {
         this.anim.setState(AnimState.DODGE);
         this.consumeStamina(DODGE_COST);
-      } else if (this.input.isHeavyAttacking() && this.stamina >= HEAVY_ATTACK_COST) {
+        // Grant dodge i-frames for the first 0.15 s
+        this.dodgeIFrameTimer = DODGE_IFRAME_DURATION;
+        this.invincibilityTimer = Math.max(this.invincibilityTimer, DODGE_IFRAME_DURATION);
+        this.warrior.setDodgeTransparency(true);
+        // Reset combo on dodge
+        this.comboStep = 0;
+        this.comboWindowTimer = 0;
+        this.attackInputQueued = false;
+      } else if ((this.input.isHeavyAttacking() || this.input.isHeavyAttackReady()) && this.stamina >= HEAVY_ATTACK_COST) {
         this.anim.setState(AnimState.ATTACK_HEAVY);
         this.consumeStamina(HEAVY_ATTACK_COST);
-        this.lightAttackIndex = 0;
-      } else if (this.input.isAttacking()) {
-        const lightStates: AnimState[] = [
-          AnimState.ATTACK_LIGHT_1,
-          AnimState.ATTACK_LIGHT_2,
-          AnimState.ATTACK_LIGHT_3,
-        ];
-        this.anim.setState(lightStates[this.lightAttackIndex % 3]!);
-        this.lightAttackIndex++;
+        this.comboStep = 0;
+        this.comboWindowTimer = 0;
+        this.attackInputQueued = false;
+      } else if (this.attackInputQueued) {
+        this.attackInputQueued = false;
+        this.triggerComboStep();
       } else if (isMoving) {
         this.anim.setState(AnimState.RUN);
       } else {
@@ -239,33 +276,41 @@ export class PlayerController {
    * Returns info about the current attack if in the active damage window,
    * or null if not attacking / not yet in the active window.
    */
-  getAttackHitInfo(): { damage: number; forward: THREE.Vector3 } | null {
+  getAttackHitInfo(): { damage: number; forward: THREE.Vector3; hitRadius: number } | null {
     const progress = this.anim.getStateProgress();
     const state = this.anim.currentState;
 
     let inWindow = false;
     let damage = 0;
+    let hitRadius = 1.6;
 
     switch (state) {
       case AnimState.ATTACK_LIGHT_1:
-      case AnimState.ATTACK_LIGHT_2:
         inWindow = progress >= 0.3 && progress <= 0.8;
         damage = 15;
+        hitRadius = 1.6;
+        break;
+      case AnimState.ATTACK_LIGHT_2:
+        inWindow = progress >= 0.3 && progress <= 0.8;
+        damage = 18;
+        hitRadius = 1.6;
         break;
       case AnimState.ATTACK_LIGHT_3:
         inWindow = progress >= 0.45 && progress <= 0.85;
-        damage = 15;
+        damage = 25;
+        hitRadius = 1.8; // wider finisher hitbox
         break;
       case AnimState.ATTACK_HEAVY:
         inWindow = progress >= 0.15 && progress <= 0.85;
         damage = 40;
+        hitRadius = 1.6;
         break;
       default:
         return null;
     }
 
     if (!inWindow) return null;
-    return { damage, forward: this.getForward() };
+    return { damage, forward: this.getForward(), hitRadius };
   }
 
   /**
@@ -286,6 +331,30 @@ export class PlayerController {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+
+  /** Advance the light-attack combo state machine. */
+  private triggerComboStep(): void {
+    if (this.comboWindowTimer > 0 && this.comboStep === 1) {
+      // Chain: L1 → L2
+      this.comboStep = 2;
+      this.comboWindowTimer = 0;
+      this.anim.setState(AnimState.ATTACK_LIGHT_2, () => {
+        this.comboWindowTimer = COMBO_WINDOW;
+      });
+    } else if (this.comboWindowTimer > 0 && this.comboStep === 2) {
+      // Chain: L2 → L3 (finisher)
+      this.comboStep = 0;
+      this.comboWindowTimer = 0;
+      this.anim.setState(AnimState.ATTACK_LIGHT_3);
+    } else {
+      // Fresh combo: start at L1
+      this.comboStep = 1;
+      this.comboWindowTimer = 0;
+      this.anim.setState(AnimState.ATTACK_LIGHT_1, () => {
+        this.comboWindowTimer = COMBO_WINDOW;
+      });
+    }
+  }
 
   private consumeStamina(amount: number): void {
     this.stamina = Math.max(0, this.stamina - amount);

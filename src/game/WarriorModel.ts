@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // ── Shared materials ────────────────────────────────────────────────────────
 const MAT_IRON = new THREE.MeshStandardMaterial({
-  color: 0x1a1a2e,
+  color: 0x2a2a40,
   metalness: 0.85,
   roughness: 0.25,
 });
@@ -18,7 +18,7 @@ const MAT_HELMET = new THREE.MeshStandardMaterial({
 const MAT_VISOR = new THREE.MeshStandardMaterial({
   color: 0x331111,
   emissive: new THREE.Color(0x331111),
-  emissiveIntensity: 0.8,
+  emissiveIntensity: 1.5,
 });
 const MAT_HORN = new THREE.MeshStandardMaterial({
   color: 0x3a3020,
@@ -49,7 +49,7 @@ const MAT_BLADE = new THREE.MeshStandardMaterial({
   metalness: 0.95,
   roughness: 0.1,
   emissive: new THREE.Color(0x4444ff),
-  emissiveIntensity: 0.5,
+  emissiveIntensity: 0.8,
 });
 const MAT_GROOVE = new THREE.MeshStandardMaterial({
   color: 0x445566,
@@ -309,5 +309,25 @@ export class WarriorModel {
       posAttr.setX(i, bx + wave);
     }
     posAttr.needsUpdate = true;
+  }
+
+  /**
+   * Toggle dodge i-frame transparency on all warrior meshes.
+   * Cape retains its original partial transparency when restoring.
+   */
+  setDodgeTransparency(active: boolean): void {
+    this.group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const mat = child.material as THREE.MeshStandardMaterial;
+        if (active) {
+          mat.transparent = true;
+          mat.opacity = 0.5;
+        } else {
+          const isCape = mat === MAT_CAPE;
+          mat.transparent = isCape;
+          mat.opacity = isCape ? 0.88 : 1.0;
+        }
+      }
+    });
   }
 }

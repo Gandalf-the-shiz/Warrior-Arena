@@ -15,6 +15,10 @@ export class InputManager {
   private mouseHeavyAttack = false;
   private pointerLocked = false;
 
+  // ── Attack hold tracking ───────────────────────────────────────────────
+  private attackButtonDown = false;
+  private attackPressTimestamp = 0;
+
   // ── Touch / virtual joystick ───────────────────────────────────────────
   private joystickActive = false;
   private joystickId: number | null = null;
@@ -82,7 +86,22 @@ export class InputManager {
     // Consume the attack flag so it fires once per press
     this.mouseAttack = false;
     this.touchAttack = false;
+    if (val) {
+      this.attackButtonDown = true;
+      this.attackPressTimestamp = Date.now();
+    }
     return val;
+  }
+
+  /** Returns the current hold duration in seconds (0 if not held). */
+  getAttackHoldTime(): number {
+    if (!this.attackButtonDown) return 0;
+    return (Date.now() - this.attackPressTimestamp) / 1000;
+  }
+
+  /** True when the attack button has been held for more than 0.4 seconds. */
+  isHeavyAttackReady(): boolean {
+    return this.attackButtonDown && this.getAttackHoldTime() > 0.4;
   }
 
   /** Right-click or E key — heavy attack (costs stamina). */
@@ -149,9 +168,17 @@ export class InputManager {
     window.addEventListener('mousedown', (e) => {
       if (this.pointerLocked && e.button === 0) {
         this.mouseAttack = true;
+        this.attackButtonDown = true;
+        this.attackPressTimestamp = Date.now();
       }
       if (this.pointerLocked && e.button === 2) {
         this.mouseHeavyAttack = true;
+      }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) {
+        this.attackButtonDown = false;
       }
     });
   }
@@ -261,6 +288,14 @@ export class InputManager {
       e.preventDefault();
       e.stopPropagation();
       this.touchAttack = true;
+      this.attackButtonDown = true;
+      this.attackPressTimestamp = Date.now();
+    }, { passive: false });
+    btn.addEventListener('touchend', () => {
+      this.attackButtonDown = false;
+    }, { passive: false });
+    btn.addEventListener('touchcancel', () => {
+      this.attackButtonDown = false;
     }, { passive: false });
   }
 
