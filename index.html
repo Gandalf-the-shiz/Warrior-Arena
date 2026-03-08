@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Warrior Arena</title>
+    <style>
+      /* ── Reset & Fullscreen ── */
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+      }
+      #game-canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      /* ── HUD Overlay ── */
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 10;
+        font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+        color: #ddd;
+      }
+
+      /* Health & Stamina — top-left */
+      #bars {
+        position: absolute;
+        top: 16px;
+        left: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 220px;
+      }
+      .bar-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .bar-label {
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #aaa;
+        width: 22px;
+        flex-shrink: 0;
+      }
+      .bar-track {
+        flex: 1;
+        height: 10px;
+        background: rgba(0,0,0,0.6);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .bar-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.15s ease;
+      }
+      #health-fill {
+        background: linear-gradient(90deg, #7b0000, #c0392b);
+        width: 100%;
+      }
+      #stamina-fill {
+        background: linear-gradient(90deg, #005544, #1abc9c);
+        width: 100%;
+      }
+
+      /* Wave counter — top-center */
+      #wave-counter {
+        position: absolute;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 22px;
+        font-weight: bold;
+        letter-spacing: 0.25em;
+        text-transform: uppercase;
+        text-shadow: 0 0 12px rgba(255,100,50,0.7), 0 2px 4px rgba(0,0,0,0.9);
+        color: #e8d5a0;
+        white-space: nowrap;
+      }
+
+      /* Kill counter — top-right */
+      #kill-counter {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 18px;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+        color: #ccc;
+      }
+      #kill-counter .skull { font-size: 20px; }
+      #kill-count {
+        font-size: 20px;
+        font-weight: bold;
+        color: #e8d5a0;
+      }
+
+      /* ── Mobile Touch Controls ── */
+      #mobile-controls {
+        display: none;
+        pointer-events: auto;
+      }
+      #joystick-zone {
+        position: absolute;
+        bottom: 24px;
+        left: 24px;
+        width: 120px;
+        height: 120px;
+      }
+      #joystick-base {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.08);
+        border: 2px solid rgba(255,255,255,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #joystick-knob {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.25);
+        border: 2px solid rgba(255,255,255,0.4);
+        position: absolute;
+        transform: translate(-50%, -50%);
+        left: 50%;
+        top: 50%;
+        transition: none;
+      }
+      #attack-btn {
+        position: absolute;
+        bottom: 40px;
+        right: 32px;
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        background: rgba(180,30,30,0.5);
+        border: 2px solid rgba(255,80,80,0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        user-select: none;
+        -webkit-user-select: none;
+        color: #fff;
+        text-shadow: 0 0 6px rgba(255,50,50,0.8);
+      }
+
+      @media (pointer: coarse) {
+        #mobile-controls { display: block; }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD Overlay -->
+    <div id="hud">
+      <div id="bars">
+        <div class="bar-row">
+          <span class="bar-label">HP</span>
+          <div class="bar-track"><div class="bar-fill" id="health-fill"></div></div>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">ST</span>
+          <div class="bar-track"><div class="bar-fill" id="stamina-fill"></div></div>
+        </div>
+      </div>
+
+      <div id="wave-counter">Wave <span id="wave-num">1</span></div>
+
+      <div id="kill-counter">
+        <span class="skull">💀</span>
+        <span id="kill-count">0</span>
+      </div>
+
+      <!-- Mobile Controls -->
+      <div id="mobile-controls">
+        <div id="joystick-zone">
+          <div id="joystick-base">
+            <div id="joystick-knob"></div>
+          </div>
+        </div>
+        <div id="attack-btn">⚔️</div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
