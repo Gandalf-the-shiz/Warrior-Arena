@@ -46,8 +46,8 @@ export class Arena {
     const RADIUS = 30;
     const geo = new THREE.CylinderGeometry(RADIUS, RADIUS, 0.4, 64);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x2a2822,
-      roughness: 0.95,
+      color: 0x3c3630,
+      roughness: 0.92,
       metalness: 0.05,
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -64,8 +64,8 @@ export class Arena {
 
   private buildPillars(): void {
     const pillarMat = new THREE.MeshStandardMaterial({
-      color: 0x3a362e,
-      roughness: 0.9,
+      color: 0x4a443a,
+      roughness: 0.88,
       metalness: 0.05,
     });
 
@@ -108,7 +108,7 @@ export class Arena {
   // ── Torches ──────────────────────────────────────────────────────────────
 
   private addTorch(x: number, y: number, z: number): void {
-    const light = new THREE.PointLight(0xff6622, 3.5, 25, 2);
+    const light = new THREE.PointLight(0xff6622, 6.0, 28, 2);
     light.position.set(x, y, z);
     light.castShadow = false; // too many shadow maps — skip for performance
     this.scene.add(light);
@@ -128,7 +128,7 @@ export class Arena {
     this.torches.push({
       light,
       speed: 2 + Math.random() * 3,
-      base: 3.5,
+      base: 6.0,
     });
 
     // Create ember particle system for this torch
@@ -138,8 +138,8 @@ export class Arena {
   // ── Lighting ─────────────────────────────────────────────────────────────
 
   private buildLighting(): void {
-    // Pale moonlight — brighter for better visibility
-    const moon = new THREE.DirectionalLight(0x5577bb, 1.2);
+    // Pale moonlight — raised for arena floor readability
+    const moon = new THREE.DirectionalLight(0x6688cc, 2.2);
     moon.position.set(20, 40, 10);
     moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
@@ -153,11 +153,11 @@ export class Arena {
     this.scene.add(moon);
 
     // Dim warm ambient — hints of volcanic heat deep below
-    const ambient = new THREE.AmbientLight(0x332244, 0.7);
+    const ambient = new THREE.AmbientLight(0x443355, 1.1);
     this.scene.add(ambient);
 
     // Hemisphere light for sky/ground fill — cool sky, warm ground
-    const hemi = new THREE.HemisphereLight(0x334466, 0x220800, 0.4);
+    const hemi = new THREE.HemisphereLight(0x445577, 0x331100, 0.9);
     this.scene.add(hemi);
   }
 
