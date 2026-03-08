@@ -11,6 +11,16 @@ const HIT_RADIUS = 1.6;
 
 // ENEMY → PLAYER damage per swing
 const ENEMY_ATTACK_DAMAGE = 10;
+const ENEMY_ATTACK_REACH = 2.5;
+
+// Impact parameters by attack weight
+const HEAVY_DAMAGE_THRESHOLD = 40;
+const HEAVY_SHAKE_INTENSITY = 0.18;
+const HEAVY_SHAKE_DURATION = 0.18;
+const LIGHT_SHAKE_INTENSITY = 0.09;
+const LIGHT_SHAKE_DURATION = 0.12;
+const HEAVY_HITSTOP = 0.05; // seconds
+const LIGHT_HITSTOP = 0.03; // seconds
 
 /**
  * Detects melee contacts and applies damage, knockback, hitstop, and VFX.
@@ -35,7 +45,7 @@ export class CombatSystem {
    */
   update(
     player: PlayerController,
-    enemies: Enemy[],
+    enemies: readonly Enemy[],
     vfx: VFXManager,
     onHitstop: (duration: number) => void,
   ): void {
@@ -49,7 +59,7 @@ export class CombatSystem {
 
   private processPlayerAttacks(
     player: PlayerController,
-    enemies: Enemy[],
+    enemies: readonly Enemy[],
     vfx: VFXManager,
     onHitstop: (duration: number) => void,
   ): void {
@@ -100,17 +110,20 @@ export class CombatSystem {
       vfx.spawnBlood(hitPos, knockbackDir);
 
       // Camera shake — heavy hit shakes more
-      const shakeIntensity = hitInfo.damage >= 40 ? 0.18 : 0.09;
-      vfx.shakeCamera(shakeIntensity, hitInfo.damage >= 40 ? 0.18 : 0.12);
+      const isHeavy = hitInfo.damage >= HEAVY_DAMAGE_THRESHOLD;
+      vfx.shakeCamera(
+        isHeavy ? HEAVY_SHAKE_INTENSITY : LIGHT_SHAKE_INTENSITY,
+        isHeavy ? HEAVY_SHAKE_DURATION  : LIGHT_SHAKE_DURATION,
+      );
 
       // Hitstop — 50 ms for heavy, 30 ms for light
-      onHitstop(hitInfo.damage >= 40 ? 0.05 : 0.03);
+      onHitstop(isHeavy ? HEAVY_HITSTOP : LIGHT_HITSTOP);
     }
   }
 
   private processEnemyAttacks(
     player: PlayerController,
-    enemies: Enemy[],
+    enemies: readonly Enemy[],
     vfx: VFXManager,
   ): void {
     const playerPos = player.getPosition();
@@ -120,7 +133,7 @@ export class CombatSystem {
       if (!enemy.isInStrikeWindow()) continue;
 
       const dist = enemy.getPosition().distanceTo(playerPos);
-      if (dist > 2.5) continue;
+      if (dist > ENEMY_ATTACK_REACH) continue;
 
       enemy.markDamageDealt();
       player.takeDamage(ENEMY_ATTACK_DAMAGE);

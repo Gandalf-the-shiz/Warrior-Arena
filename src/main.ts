@@ -136,7 +136,7 @@ async function main(): Promise<void> {
       // Combat hit-detection + VFX
       combat.update(
         player,
-        waves.enemies as import('@/game/Enemy').Enemy[],
+        waves.enemies,
         vfx,
         (duration) => { hitstopRemaining = Math.max(hitstopRemaining, duration); },
       );

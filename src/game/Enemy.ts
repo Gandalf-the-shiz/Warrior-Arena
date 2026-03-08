@@ -42,6 +42,10 @@ enum EnemyAIState {
 // Prevents enemy–enemy physics collisions while preserving player / static collisions.
 const ENEMY_COLLISION_GROUPS = (2 << 16) | 0xFFFD;
 
+// HP range for skeleton enemies
+const ENEMY_MIN_HP = 30;
+const ENEMY_HP_RANGE = 21; // random bonus (30–50 total)
+
 /**
  * Procedural skeleton enemy.
  *
@@ -99,7 +103,7 @@ export class Enemy {
     this.wanderX = spawnX;
     this.wanderZ = spawnZ;
 
-    this.maxHp = 30 + Math.floor(Math.random() * 21); // 30–50
+    this.maxHp = ENEMY_MIN_HP + Math.floor(Math.random() * ENEMY_HP_RANGE); // 30–50
     this.hp = this.maxHp;
 
     // ── Physics body ─────────────────────────────────────────────────────
