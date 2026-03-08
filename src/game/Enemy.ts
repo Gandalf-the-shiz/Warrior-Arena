@@ -91,6 +91,8 @@ enum EnemyAIState {
   ATTACK_STRIKE,
   HIT,
   DEAD,
+  /** Ghoul-exclusive: brief hop-back/disengage before re-engaging. */
+  GHOUL_RESET,
 }
 
 // Collision groups: membership = bit 2 (enemy group), filter = everything except bit 2.
@@ -121,12 +123,65 @@ const TYPE_STATS: Record<EnemyType, {
 };
 
 /**
+ * Per-type behavioural tuning — controls AI decision distances, movement
+ * feel, and combat rhythm without touching raw stat numbers.
+ *
+ * SKELETON — disciplined baseline pressure. Straightforward approach,
+ *            readable windup, moderate hit-stun.
+ * GHOUL    — fast skirmisher. Lateral drift while aggroing, darts in from
+ *            short range, hops back after striking, fast hit-recovery.
+ * BRUTE    — slow terror. Commits from further away, heavy lunge, long
+ *            strike window, poise (low hit-stun).
+ */
+const TYPE_BEHAVIOR: Record<EnemyType, {
+  attackRange: number;           // distance at which ATTACK_WINDUP triggers
+  lungeSpeed: number;            // velocity impulse during strike lunge
+  lungeDuration: number;         // how many seconds the lunge impulse lasts
+  strikeWindowTime: number;      // total duration of ATTACK_STRIKE state
+  hitStunTime: number;           // duration of HIT state (poise = shorter)
+  lateralDrift: boolean;         // sinusoidal lateral drift while approaching
+  lateralFreq: number;           // oscillation frequency (rad/s) for drift
+  lateralAmp: number;            // amplitude multiplier for lateral drift
+  disengageAfterStrike: boolean; // briefly hop back after striking
+  disengageChance: number;       // probability [0–1] of choosing GHOUL_RESET
+  disengageRetreatMult: number;  // retreat speed as a multiple of moveSpeed
+  disengageTime: number;         // max seconds in GHOUL_RESET before re-aggro
+  disengageRange: number;        // re-engage immediately once beyond this dist
+}> = {
+  // Skeleton: standard spacing, clean read, moderate recovery
+  [EnemyType.SKELETON]: {
+    attackRange: 2.0, lungeSpeed: 5, lungeDuration: 0.12,
+    strikeWindowTime: 0.4, hitStunTime: 0.30,
+    lateralDrift: false, lateralFreq: 0, lateralAmp: 0,
+    disengageAfterStrike: false, disengageChance: 0,
+    disengageRetreatMult: 0, disengageTime: 0, disengageRange: 0,
+  },
+  // Ghoul: darts in close, lateral weave, quick recovery, hop-back reset
+  [EnemyType.GHOUL]: {
+    attackRange: 1.8, lungeSpeed: 6, lungeDuration: 0.10,
+    strikeWindowTime: 0.28, hitStunTime: 0.16,
+    lateralDrift: true, lateralFreq: 3.5, lateralAmp: 0.7,
+    disengageAfterStrike: true, disengageChance: 0.6,
+    disengageRetreatMult: 1.1, disengageTime: 0.45, disengageRange: 5,
+  },
+  // Brute: commits from longer range, powerful lunge, high poise
+  [EnemyType.BRUTE]: {
+    attackRange: 2.8, lungeSpeed: 9, lungeDuration: 0.20,
+    strikeWindowTime: 0.55, hitStunTime: 0.12,
+    lateralDrift: false, lateralFreq: 0, lateralAmp: 0,
+    disengageAfterStrike: false, disengageChance: 0,
+    disengageRetreatMult: 0, disengageTime: 0, disengageRange: 0,
+  },
+};
+
+/**
  * Procedural enemy (skeleton / ghoul / brute).
  *
  * Built from Three.js primitives. Rapier capsule physics body with enemy
  * collision groups so enemies don't push each other into a pile.
  *
  * AI states: IDLE → WANDER → AGGRO → ATTACK_WINDUP → ATTACK_STRIKE → back
+ *            Ghoul additionally uses GHOUL_RESET for its disengage loop.
  */
 export class Enemy {
   readonly body: RAPIER.RigidBody;
@@ -146,6 +201,8 @@ export class Enemy {
   private readonly windupTime: number;
   /** Attack cooldown base (seconds between swings). */
   private readonly attackCooldownBase: number;
+  /** Archetype — drives per-type behavioral branching. */
+  private readonly enemyType: EnemyType;
 
   private aiState: EnemyAIState = EnemyAIState.IDLE;
   private stateTimer = 0;
@@ -188,6 +245,7 @@ export class Enemy {
   ) {
     this.spawnX = spawnX;
     this.spawnZ = spawnZ;
+    this.enemyType = enemyType;
 
     const stats = TYPE_STATS[enemyType];
     this.attackDamage       = stats.damage;
@@ -485,7 +543,8 @@ export class Enemy {
       }
 
       case EnemyAIState.AGGRO: {
-        if (distToPlayer < 2.0 && this.attackCooldown <= 0) {
+        const beh = TYPE_BEHAVIOR[this.enemyType];
+        if (distToPlayer < beh.attackRange && this.attackCooldown <= 0) {
           this.aiState = EnemyAIState.ATTACK_WINDUP;
           this.stateTimer = 0;
           this.body.setLinvel({ x: 0, y: vel.y, z: 0 }, true);
@@ -498,10 +557,22 @@ export class Enemy {
         }
         const spd = this.moveSpeed;
         if (distToPlayer > 0) {
-          this.body.setLinvel(
-            { x: (dx / distToPlayer) * spd, y: vel.y, z: (dz / distToPlayer) * spd },
-            true,
-          );
+          if (beh.lateralDrift) {
+            // Ghoul: sinusoidal lateral weave — perpendicular to the approach vector
+            const perpX = -dz / distToPlayer;
+            const perpZ =  dx / distToPlayer;
+            const drift = Math.sin(this.animTime * beh.lateralFreq) * beh.lateralAmp;
+            this.body.setLinvel({
+              x: (dx / distToPlayer) * spd + perpX * drift * spd,
+              y: vel.y,
+              z: (dz / distToPlayer) * spd + perpZ * drift * spd,
+            }, true);
+          } else {
+            this.body.setLinvel(
+              { x: (dx / distToPlayer) * spd, y: vel.y, z: (dz / distToPlayer) * spd },
+              true,
+            );
+          }
           this.targetRotation.setFromEuler(new THREE.Euler(0, Math.atan2(dx, dz), 0));
         }
         break;
@@ -515,15 +586,29 @@ export class Enemy {
         }
         break;
 
-      case EnemyAIState.ATTACK_STRIKE:
-        // Brief lunge
-        if (this.stateTimer < 0.12 && distToPlayer > 0) {
+      case EnemyAIState.ATTACK_STRIKE: {
+        // Per-type lunge: brute surges harder and longer, ghoul darts in quick
+        const beh = TYPE_BEHAVIOR[this.enemyType];
+        if (this.stateTimer < beh.lungeDuration && distToPlayer > 0) {
           this.body.setLinvel(
-            { x: (dx / distToPlayer) * 5, y: vel.y, z: (dz / distToPlayer) * 5 },
+            { x: (dx / distToPlayer) * beh.lungeSpeed, y: vel.y, z: (dz / distToPlayer) * beh.lungeSpeed },
             true,
           );
         } else {
           this.body.setLinvel({ x: vel.x * 0.5, y: vel.y, z: vel.z * 0.5 }, true);
+        }
+        break;
+      }
+
+      case EnemyAIState.GHOUL_RESET:
+        // Hop directly away from the player at moderate speed
+        if (distToPlayer > 0) {
+          const retreatSpd = this.moveSpeed * TYPE_BEHAVIOR[this.enemyType].disengageRetreatMult;
+          this.body.setLinvel({
+            x: -(dx / distToPlayer) * retreatSpd,
+            y: vel.y,
+            z: -(dz / distToPlayer) * retreatSpd,
+          }, true);
         }
         break;
 
@@ -582,22 +667,43 @@ export class Enemy {
         this.animAttackWindup(Math.min(this.stateTimer / this.windupTime, 1));
         break;
 
-      case EnemyAIState.ATTACK_STRIKE:
-        if (this.stateTimer >= 0.4) {
+      case EnemyAIState.ATTACK_STRIKE: {
+        const beh = TYPE_BEHAVIOR[this.enemyType];
+        if (this.stateTimer >= beh.strikeWindowTime) {
           this.attackCooldown = this.attackCooldownBase;
-          this.aiState = EnemyAIState.AGGRO;
+          // Ghoul hops back after striking before re-engaging (~60 % of the time)
+          if (beh.disengageAfterStrike && Math.random() < beh.disengageChance) {
+            this.aiState = EnemyAIState.GHOUL_RESET;
+          } else {
+            this.aiState = EnemyAIState.AGGRO;
+          }
           this.stateTimer = 0;
         }
-        this.animAttackStrike(Math.min(this.stateTimer / 0.4, 1));
+        this.animAttackStrike(Math.min(this.stateTimer / beh.strikeWindowTime, 1));
         break;
+      }
 
-      case EnemyAIState.HIT:
-        if (this.stateTimer >= 0.3) {
+      case EnemyAIState.HIT: {
+        const hitStunTime = TYPE_BEHAVIOR[this.enemyType].hitStunTime;
+        if (this.stateTimer >= hitStunTime) {
           this.aiState = EnemyAIState.AGGRO;
           this.stateTimer = 0;
         }
-        this.animHit(Math.min(this.stateTimer / 0.3, 1));
+        this.animHit(Math.min(this.stateTimer / hitStunTime, 1));
         break;
+      }
+
+      case EnemyAIState.GHOUL_RESET: {
+        // Briefly disengage; re-engage once far enough or timer expires
+        const beh = TYPE_BEHAVIOR[this.enemyType];
+        if (this.stateTimer >= beh.disengageTime || distToPlayer > beh.disengageRange) {
+          this.aiState = EnemyAIState.AGGRO;
+          this.stateTimer = 0;
+        }
+        // Play the run animation in reverse-ish (lean back) by passing a negative speed hint
+        this.animRun(0.6);
+        break;
+      }
 
       case EnemyAIState.DEAD:
         this.animDeath(Math.min(this.stateTimer / 1.2, 1));

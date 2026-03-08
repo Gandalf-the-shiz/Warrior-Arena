@@ -149,15 +149,25 @@ export class WaveManager {
   /** Choose enemy type based on current wave. */
   private pickEnemyType(): EnemyType {
     const wave = this._currentWave;
-    if (wave >= 5) {
+    // Wave 6+: all three archetypes in full rotation
+    if (wave >= 6) {
       const r = Math.random();
-      if (r < 0.45) return EnemyType.SKELETON;
-      if (r < 0.75) return EnemyType.GHOUL;
+      if (r < 0.40) return EnemyType.SKELETON;
+      if (r < 0.72) return EnemyType.GHOUL;
       return EnemyType.BRUTE;
     }
-    if (wave >= 3) {
-      return Math.random() < 0.5 ? EnemyType.SKELETON : EnemyType.GHOUL;
+    // Wave 4–5: ghouls dominant, first brutes trickle in
+    if (wave >= 4) {
+      const r = Math.random();
+      if (r < 0.38) return EnemyType.SKELETON;
+      if (r < 0.78) return EnemyType.GHOUL;
+      return EnemyType.BRUTE;
     }
+    // Wave 3: ghouls introduced alongside skeletons
+    if (wave >= 3) {
+      return Math.random() < 0.60 ? EnemyType.SKELETON : EnemyType.GHOUL;
+    }
+    // Wave 1–2: skeletons only — teaches baseline spacing and timing
     return EnemyType.SKELETON;
   }
 
