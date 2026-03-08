@@ -19,6 +19,11 @@ export class CameraController {
   private readonly targetPosition = new THREE.Vector3();
   private readonly currentPosition = new THREE.Vector3();
 
+  private frameCount = 0;
+  // Skip collision avoidance for the first few frames to avoid physics-settle
+  // artifacts pushing the camera into a bad initial position.
+  private static readonly COLLISION_GRACE_FRAMES = 10;
+
   // Over-the-shoulder offset in camera-local space (behind, above, slightly right)
   private readonly OFFSET = new THREE.Vector3(0.6, 2.5, 4.5);
 
@@ -32,7 +37,7 @@ export class CameraController {
     const initialLookAt = new THREE.Vector3(0, 3, 0); // player (0,2,0) + 1 Y
     const yawQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, this.yaw, 0));
     const pitchQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.pitch, 0, 0));
-    const orbitQ = yawQ.multiply(pitchQ);
+    const orbitQ = new THREE.Quaternion().multiplyQuaternions(yawQ, pitchQ);
     const worldOffset = this.OFFSET.clone().applyQuaternion(orbitQ);
     this.currentPosition.copy(initialLookAt).add(worldOffset);
     this.camera.position.copy(this.currentPosition);
@@ -55,24 +60,27 @@ export class CameraController {
     // Build rotation matrix from yaw + pitch
     const yawQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, this.yaw, 0));
     const pitchQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.pitch, 0, 0));
-    const orbitQ = yawQ.multiply(pitchQ);
+    const orbitQ = new THREE.Quaternion().multiplyQuaternions(yawQ, pitchQ);
 
     // Rotate the local offset into world space and add to the look-at point
     const lookAt = playerPos.clone().add(new THREE.Vector3(0, 1, 0)); // chest height
     const worldOffset = this.OFFSET.clone().applyQuaternion(orbitQ);
     this.targetPosition.copy(lookAt).add(worldOffset);
 
-    // ── Collision avoidance ───────────────────────────────────────────────
-    const rayDir = worldOffset.clone().normalize();
-    const maxDist = worldOffset.length();
-    const toi = this.physics.castRay(
-      { x: lookAt.x, y: lookAt.y, z: lookAt.z },
-      { x: rayDir.x, y: rayDir.y, z: rayDir.z },
-      maxDist,
-    );
-    if (toi !== null && toi < maxDist) {
-      // Pull camera in front of the hit surface (small margin)
-      this.targetPosition.copy(lookAt).addScaledVector(rayDir, Math.max(toi - 0.3, 0.5));
+    // ── Collision avoidance (skipped during initial grace period) ─────────
+    this.frameCount += 1;
+    if (this.frameCount > CameraController.COLLISION_GRACE_FRAMES) {
+      const rayDir = worldOffset.clone().normalize();
+      const maxDist = worldOffset.length();
+      const toi = this.physics.castRay(
+        { x: lookAt.x, y: lookAt.y, z: lookAt.z },
+        { x: rayDir.x, y: rayDir.y, z: rayDir.z },
+        maxDist,
+      );
+      if (toi !== null && toi < maxDist) {
+        // Pull camera in front of the hit surface (small margin)
+        this.targetPosition.copy(lookAt).addScaledVector(rayDir, Math.max(toi - 0.3, 0.5));
+      }
     }
 
     // ── Smooth follow ─────────────────────────────────────────────────────

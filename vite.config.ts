@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
 export default defineConfig({
-  base: '/warrior-arena/',
+  base: '/Warrior-Arena/',
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
