@@ -133,6 +133,54 @@
         color: #888;
         transition: color 0.2s ease, text-shadow 0.2s ease;
       }
+      @keyframes rank-pop {
+        0%   { transform: scale(1); }
+        40%  { transform: scale(1.55); }
+        70%  { transform: scale(0.92); }
+        100% { transform: scale(1); }
+      }
+      #style-rank.rank-pulse {
+        animation: rank-pop 0.32s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+      }
+      #combo-count {
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        color: #cc9933;
+        min-height: 14px;
+        text-transform: uppercase;
+      }
+      #style-multiplier {
+        font-size: 13px;
+        font-weight: bold;
+        letter-spacing: 0.05em;
+        color: #ffcc44;
+        text-shadow: 0 0 8px rgba(255,200,50,0.7);
+        min-height: 16px;
+      }
+
+      /* Score — top-right below kill counter */
+      #score-display {
+        position: absolute;
+        top: 52px;
+        right: 72px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0;
+        line-height: 1.1;
+      }
+      #score-label {
+        font-size: 9px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #666;
+      }
+      #score-value {
+        font-size: 18px;
+        font-weight: bold;
+        color: #e8d5a0;
+        text-shadow: 0 0 10px rgba(255,180,50,0.5);
+      }
 
       /* ── Mobile Touch Controls ── */
       #mobile-controls {
@@ -222,6 +270,13 @@
       <div id="style-meter">
         <div id="style-label">Style</div>
         <div id="style-rank">D</div>
+        <div id="combo-count"></div>
+        <div id="style-multiplier"></div>
+      </div>
+
+      <div id="score-display">
+        <div id="score-label">Score</div>
+        <div id="score-value">0</div>
       </div>
 
       <!-- Mobile Controls -->

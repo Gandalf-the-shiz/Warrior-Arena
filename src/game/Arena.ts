@@ -35,7 +35,7 @@ export class Arena {
   /** Call every frame with elapsed time (seconds) and delta to animate torches and particles. */
   update(time: number, delta = 1 / 60): void {
     for (const torch of this.torches) {
-      torch.light.intensity = torch.base + Math.sin(time * torch.speed) * 0.5;
+      torch.light.intensity = torch.base + Math.sin(time * torch.speed) * 0.8;
     }
     this.updateEmbers(delta);
   }
@@ -46,9 +46,9 @@ export class Arena {
     const RADIUS = 30;
     const geo = new THREE.CylinderGeometry(RADIUS, RADIUS, 0.4, 64);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x3c3630,
-      roughness: 0.92,
-      metalness: 0.05,
+      color: 0x5a5248,   // warmer stone — much brighter than before
+      roughness: 0.90,
+      metalness: 0.04,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
@@ -64,9 +64,9 @@ export class Arena {
 
   private buildPillars(): void {
     const pillarMat = new THREE.MeshStandardMaterial({
-      color: 0x4a443a,
-      roughness: 0.88,
-      metalness: 0.05,
+      color: 0x706860,   // lighter stone — clearly distinct from the floor
+      roughness: 0.85,
+      metalness: 0.04,
     });
 
     const COUNT = 10;
@@ -108,7 +108,7 @@ export class Arena {
   // ── Torches ──────────────────────────────────────────────────────────────
 
   private addTorch(x: number, y: number, z: number): void {
-    const light = new THREE.PointLight(0xff6622, 6.0, 28, 2);
+    const light = new THREE.PointLight(0xff6622, 10.0, 35, 2);
     light.position.set(x, y, z);
     light.castShadow = false; // too many shadow maps — skip for performance
     this.scene.add(light);
@@ -128,7 +128,7 @@ export class Arena {
     this.torches.push({
       light,
       speed: 2 + Math.random() * 3,
-      base: 6.0,
+      base: 10.0,
     });
 
     // Create ember particle system for this torch
@@ -138,8 +138,8 @@ export class Arena {
   // ── Lighting ─────────────────────────────────────────────────────────────
 
   private buildLighting(): void {
-    // Pale moonlight — raised for arena floor readability
-    const moon = new THREE.DirectionalLight(0x6688cc, 2.2);
+    // Pale moonlight — significantly raised for arena floor readability
+    const moon = new THREE.DirectionalLight(0x7799dd, 3.5);
     moon.position.set(20, 40, 10);
     moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
@@ -152,13 +152,18 @@ export class Arena {
     moon.shadow.bias = -0.001;
     this.scene.add(moon);
 
-    // Dim warm ambient — hints of volcanic heat deep below
-    const ambient = new THREE.AmbientLight(0x443355, 1.1);
+    // Warm ambient — enough to lift the darkest shadows
+    const ambient = new THREE.AmbientLight(0x554466, 1.8);
     this.scene.add(ambient);
 
-    // Hemisphere light for sky/ground fill — cool sky, warm ground
-    const hemi = new THREE.HemisphereLight(0x445577, 0x331100, 0.9);
+    // Hemisphere light — cool sky, warm volcanic ground fill
+    const hemi = new THREE.HemisphereLight(0x5566aa, 0x442200, 1.5);
     this.scene.add(hemi);
+
+    // Subtle secondary fill from the opposite direction for depth/contrast
+    const fill = new THREE.DirectionalLight(0x553322, 1.0);
+    fill.position.set(-15, 10, -20);
+    this.scene.add(fill);
   }
 
   // ── Invisible boundary walls ─────────────────────────────────────────────

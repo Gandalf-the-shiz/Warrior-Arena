@@ -8,6 +8,9 @@ export class HUD {
   private readonly waveNum: HTMLElement;
   private readonly killCount: HTMLElement;
   private readonly styleMeterEl: HTMLElement;
+  private readonly comboCountEl: HTMLElement;
+  private readonly styleMultEl: HTMLElement;
+  private readonly scoreValueEl: HTMLElement;
 
   constructor() {
     this.healthFill = this.getEl('health-fill');
@@ -15,6 +18,9 @@ export class HUD {
     this.waveNum = this.getEl('wave-num');
     this.killCount = this.getEl('kill-count');
     this.styleMeterEl = this.getEl('style-rank');
+    this.comboCountEl = this.getEl('combo-count');
+    this.styleMultEl = this.getEl('style-multiplier');
+    this.scoreValueEl = this.getEl('score-value');
   }
 
   /** Update the health bar (0 – max). */
@@ -39,6 +45,18 @@ export class HUD {
     this.killCount.textContent = String(num);
   }
 
+  /** Update the score display. */
+  updateScore(score: number): void {
+    this.scoreValueEl.textContent = String(score);
+  }
+
+  /** Update the combo hit counter and multiplier badge. */
+  updateCombo(combo: number, multiplier: number): void {
+    this.comboCountEl.textContent = combo > 0 ? `${combo} HIT${combo === 1 ? '' : 'S'}` : '';
+    const multLabel = multiplier > 1 ? `×${multiplier % 1 === 0 ? multiplier : multiplier.toFixed(1)}` : '';
+    this.styleMultEl.textContent = multLabel;
+  }
+
   /** Update the style rank display. */
   updateStyleRank(rank: string): void {
     this.styleMeterEl.textContent = rank;
@@ -59,6 +77,17 @@ export class HUD {
     };
     this.styleMeterEl.style.color = colors[rank] ?? '#888';
     this.styleMeterEl.style.textShadow = glows[rank] ?? 'none';
+  }
+
+  /**
+   * Trigger a brief scale-pulse animation on the style rank letter.
+   * Called whenever the rank changes to give tactile feedback.
+   */
+  pulseRank(): void {
+    this.styleMeterEl.classList.remove('rank-pulse');
+    // Force reflow to restart animation
+    void this.styleMeterEl.offsetWidth;
+    this.styleMeterEl.classList.add('rank-pulse');
   }
 
   private getEl(id: string): HTMLElement {

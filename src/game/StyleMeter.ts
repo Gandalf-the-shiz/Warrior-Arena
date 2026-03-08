@@ -34,6 +34,20 @@ export class StyleMeter {
     return Math.floor(this.comboCount);
   }
 
+  /**
+   * Score multiplier based on current rank.
+   * D=×1, C=×1.5, B=×2, A=×3, S=×5
+   */
+  get scoreMultiplier(): number {
+    switch (this.rank) {
+      case 'S': return 5;
+      case 'A': return 3;
+      case 'B': return 2;
+      case 'C': return 1.5;
+      default:  return 1;
+    }
+  }
+
   /** Call when the player successfully lands a hit. */
   registerHit(): void {
     this.comboCount++;

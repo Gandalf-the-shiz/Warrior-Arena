@@ -2,18 +2,22 @@ import * as THREE from 'three';
 
 // ── Shared materials ────────────────────────────────────────────────────────
 const MAT_IRON = new THREE.MeshStandardMaterial({
-  color: 0x2a2a40,
+  color: 0x3a3a52,
   metalness: 0.85,
   roughness: 0.25,
+  emissive: new THREE.Color(0x0a0a20),
+  emissiveIntensity: 0.6,
 });
 const MAT_SKIN = new THREE.MeshStandardMaterial({
-  color: 0x2a1f1a,
+  color: 0x3d2e24,
   roughness: 0.7,
 });
 const MAT_HELMET = new THREE.MeshStandardMaterial({
-  color: 0x2a2a3a,
+  color: 0x383848,
   metalness: 0.8,
   roughness: 0.3,
+  emissive: new THREE.Color(0x080810),
+  emissiveIntensity: 0.5,
 });
 const MAT_VISOR = new THREE.MeshStandardMaterial({
   color: 0x331111,
