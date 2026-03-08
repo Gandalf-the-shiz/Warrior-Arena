@@ -2,71 +2,71 @@ import * as THREE from 'three';
 
 // ── Shared materials ────────────────────────────────────────────────────────
 const MAT_IRON = new THREE.MeshStandardMaterial({
-  color: 0x3a3a52,
+  color: 0x6060a0,   // lifted blue-steel — visible under dark-fantasy lighting
   metalness: 0.85,
   roughness: 0.25,
-  emissive: new THREE.Color(0x0a0a20),
-  emissiveIntensity: 0.6,
+  emissive: new THREE.Color(0x101030),
+  emissiveIntensity: 0.8,
 });
 const MAT_SKIN = new THREE.MeshStandardMaterial({
-  color: 0x3d2e24,
+  color: 0x8a6e58,   // readable warm skin tone
   roughness: 0.7,
 });
 const MAT_HELMET = new THREE.MeshStandardMaterial({
-  color: 0x383848,
+  color: 0x686878,   // medium dark-blue-grey — distinguishable from black
   metalness: 0.8,
   roughness: 0.3,
-  emissive: new THREE.Color(0x080810),
-  emissiveIntensity: 0.5,
+  emissive: new THREE.Color(0x101018),
+  emissiveIntensity: 0.6,
 });
 const MAT_VISOR = new THREE.MeshStandardMaterial({
-  color: 0x331111,
-  emissive: new THREE.Color(0x331111),
-  emissiveIntensity: 1.5,
+  color: 0x551111,
+  emissive: new THREE.Color(0x551111),
+  emissiveIntensity: 2.0,
 });
 const MAT_HORN = new THREE.MeshStandardMaterial({
-  color: 0x3a3020,
+  color: 0x6a5a40,   // warm bone — visible
   roughness: 0.6,
 });
 const MAT_PAULDRON = new THREE.MeshStandardMaterial({
-  color: 0x222238,
+  color: 0x585870,   // medium blue-grey plate
   metalness: 0.8,
   roughness: 0.3,
 });
 const MAT_GAUNTLET = new THREE.MeshStandardMaterial({
-  color: 0x151522,
+  color: 0x404060,   // dark but not invisible
   metalness: 0.9,
   roughness: 0.2,
 });
 const MAT_BOOT = new THREE.MeshStandardMaterial({
-  color: 0x1a1510,
+  color: 0x40382a,   // dark leather — visible against stone floor
   roughness: 0.8,
 });
 const MAT_CAPE = new THREE.MeshStandardMaterial({
-  color: 0x3a0a0a,
+  color: 0x7a1a1a,   // readable dark red
   side: THREE.DoubleSide,
   transparent: true,
   opacity: 0.88,
 });
 const MAT_BLADE = new THREE.MeshStandardMaterial({
-  color: 0x8899aa,
+  color: 0x9aabbc,   // bright steel
   metalness: 0.95,
   roughness: 0.1,
   emissive: new THREE.Color(0x4444ff),
-  emissiveIntensity: 0.8,
+  emissiveIntensity: 1.5,   // strong magic glow — blade reads instantly
 });
 const MAT_GROOVE = new THREE.MeshStandardMaterial({
-  color: 0x445566,
+  color: 0x556677,
   metalness: 0.9,
   roughness: 0.15,
 });
 const MAT_CROSSGUARD = new THREE.MeshStandardMaterial({
-  color: 0x2a2020,
+  color: 0x4a3a3a,
   metalness: 0.7,
   roughness: 0.4,
 });
 const MAT_GRIP = new THREE.MeshStandardMaterial({
-  color: 0x1a1510,
+  color: 0x3a2a20,   // dark leather — slightly lifted
   roughness: 0.8,
 });
 

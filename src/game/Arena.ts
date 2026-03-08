@@ -18,6 +18,7 @@ export class Arena {
     light: THREE.PointLight;
     speed: number;
     base: number;
+    flicker: number;  // peak flicker swing amplitude
   }> = [];
 
   private readonly emberSystems: TorchEmbers[] = [];
@@ -35,7 +36,7 @@ export class Arena {
   /** Call every frame with elapsed time (seconds) and delta to animate torches and particles. */
   update(time: number, delta = 1 / 60): void {
     for (const torch of this.torches) {
-      torch.light.intensity = torch.base + Math.sin(time * torch.speed) * 0.8;
+      torch.light.intensity = torch.base + Math.sin(time * torch.speed) * torch.flicker;
     }
     this.updateEmbers(delta);
   }
@@ -46,8 +47,8 @@ export class Arena {
     const RADIUS = 30;
     const geo = new THREE.CylinderGeometry(RADIUS, RADIUS, 0.4, 64);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x5a5248,   // warmer stone — much brighter than before
-      roughness: 0.90,
+      color: 0x786a5e,   // notably lighter warm stone — floor must read clearly
+      roughness: 0.88,
       metalness: 0.04,
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -64,8 +65,8 @@ export class Arena {
 
   private buildPillars(): void {
     const pillarMat = new THREE.MeshStandardMaterial({
-      color: 0x706860,   // lighter stone — clearly distinct from the floor
-      roughness: 0.85,
+      color: 0x908278,   // lighter stone — clearly distinct from the floor
+      roughness: 0.82,
       metalness: 0.04,
     });
 
@@ -108,7 +109,7 @@ export class Arena {
   // ── Torches ──────────────────────────────────────────────────────────────
 
   private addTorch(x: number, y: number, z: number): void {
-    const light = new THREE.PointLight(0xff6622, 10.0, 35, 2);
+    const light = new THREE.PointLight(0xff6622, 22.0, 50, 2);
     light.position.set(x, y, z);
     light.castShadow = false; // too many shadow maps — skip for performance
     this.scene.add(light);
@@ -119,7 +120,7 @@ export class Arena {
       new THREE.MeshStandardMaterial({
         color: 0xff8833,
         emissive: 0xff4400,
-        emissiveIntensity: 2,
+        emissiveIntensity: 3,
       }),
     );
     ember.position.copy(light.position);
@@ -128,7 +129,8 @@ export class Arena {
     this.torches.push({
       light,
       speed: 2 + Math.random() * 3,
-      base: 10.0,
+      base: 22.0,
+      flicker: 3.0,
     });
 
     // Create ember particle system for this torch
@@ -138,8 +140,8 @@ export class Arena {
   // ── Lighting ─────────────────────────────────────────────────────────────
 
   private buildLighting(): void {
-    // Pale moonlight — significantly raised for arena floor readability
-    const moon = new THREE.DirectionalLight(0x7799dd, 3.5);
+    // Pale moonlight — raised to ensure the arena floor is always readable
+    const moon = new THREE.DirectionalLight(0x7799dd, 5.5);
     moon.position.set(20, 40, 10);
     moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
@@ -152,18 +154,24 @@ export class Arena {
     moon.shadow.bias = -0.001;
     this.scene.add(moon);
 
-    // Warm ambient — enough to lift the darkest shadows
-    const ambient = new THREE.AmbientLight(0x554466, 1.8);
+    // Warm ambient — lifts even the darkest shadowed surfaces
+    const ambient = new THREE.AmbientLight(0x6655aa, 3.0);
     this.scene.add(ambient);
 
-    // Hemisphere light — cool sky, warm volcanic ground fill
-    const hemi = new THREE.HemisphereLight(0x5566aa, 0x442200, 1.5);
+    // Hemisphere light — brighter cool sky, warm volcanic ground bounce
+    const hemi = new THREE.HemisphereLight(0x7788cc, 0x553300, 2.5);
     this.scene.add(hemi);
 
-    // Subtle secondary fill from the opposite direction for depth/contrast
-    const fill = new THREE.DirectionalLight(0x553322, 1.0);
+    // Fill light from opposite side for depth/contrast
+    const fill = new THREE.DirectionalLight(0x664433, 2.0);
     fill.position.set(-15, 10, -20);
     this.scene.add(fill);
+
+    // Center combat-zone fill — a soft overhead light ensures the player and
+    // enemies are illuminated regardless of torch distance.
+    const centerFill = new THREE.PointLight(0xfff0dd, 6.0, 70, 1.5);
+    centerFill.position.set(0, 12, 0);
+    this.scene.add(centerFill);
   }
 
   // ── Invisible boundary walls ─────────────────────────────────────────────
