@@ -270,9 +270,11 @@ export class Arena {
 
       posAttr.needsUpdate = true;
 
-      // Fade out near end of particle life
+      // Fade out near end of particle life — use a simple loop to avoid allocation.
       const mat = sys.points.material as THREE.PointsMaterial;
-      const avgAge = Array.from(sys.ages).reduce((a, b) => a + b, 0) / count;
+      let ageSum = 0;
+      for (let i = 0; i < count; i++) ageSum += sys.ages[i]!;
+      const avgAge = ageSum / count;
       mat.opacity = Math.max(0.3, 0.9 * (1 - avgAge / sys.life));
     }
   }
