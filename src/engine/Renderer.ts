@@ -23,16 +23,16 @@ export class Renderer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Colour grading — dark cinematic look
+    // Colour grading — dark cinematic look, exposure raised for legibility
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.3;
+    this.renderer.toneMappingExposure = 1.8;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     // ── Scene ───────────────────────────────────────────────────────────────
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0a0a14);
-    // Exponential fog creates the Nordic hellscape atmosphere
-    this.scene.fog = new THREE.FogExp2(0x0f0f18, 0.015);
+    // Slightly reduced fog so the arena floor and combatants stay readable
+    this.scene.fog = new THREE.FogExp2(0x0f0f18, 0.011);
 
     // ── Camera ──────────────────────────────────────────────────────────────
     this.camera = new THREE.PerspectiveCamera(

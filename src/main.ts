@@ -11,6 +11,10 @@ import { CombatSystem } from '@/game/CombatSystem';
 import { VFXManager } from '@/game/VFXManager';
 import { StyleMeter } from '@/game/StyleMeter';
 import { HUD } from '@/ui/HUD';
+import { MetaUI } from '@/ui/MetaUI';
+
+// ── Run state ─────────────────────────────────────────────────────────────
+type RunState = 'title' | 'playing' | 'gameover';
 
 // ── Loading / error overlay helpers ───────────────────────────────────────
 function showLoading(): HTMLElement {
@@ -111,6 +115,26 @@ async function main(): Promise<void> {
   hud.updateWave(1);
   hud.updateKills(0);
 
+  // ── Run state ──────────────────────────────────────────────────────────
+  let runState: RunState = 'title';
+  // Seconds to wait after player death before showing game-over overlay
+  const DEATH_OVERLAY_DELAY = 1.8;
+  let deathTimer = 0;
+
+  const metaUI = new MetaUI(
+    // onStart — player clicks "Enter Arena"
+    () => {
+      metaUI.hide();
+      runState = 'playing';
+      loop.start();
+    },
+    // onRestart — player clicks "Rise Again"
+    () => {
+      window.location.reload();
+    },
+  );
+  metaUI.showTitle();
+
   let elapsed = 0;
 
   // Hitstop: when > 0 the game freezes (camera and rendering still run)
@@ -133,6 +157,25 @@ async function main(): Promise<void> {
 
       player.update(delta);
       camera.update(player.getPosition(), delta);
+
+      // ── Death / game-over transition ──────────────────────────────────
+      if (player.isDead && runState === 'playing') {
+        deathTimer += delta;
+        if (deathTimer >= DEATH_OVERLAY_DELAY) {
+          deathTimer = 0;
+          runState = 'gameover';
+          metaUI.showGameOver(waves.totalKills, waves.currentWave);
+        }
+        // Keep enemies + VFX animating during death sequence; skip combat
+        waves.update(delta, player.getPosition());
+        vfx.update(delta);
+        hud.updateHealth(player.hp, player.maxHp);
+        hud.updateStamina(player.stamina, player.maxStamina);
+        return;
+      }
+
+      if (runState !== 'playing') return;
+
       waves.update(delta, player.getPosition());
 
       // Combat hit-detection + VFX
@@ -155,6 +198,7 @@ async function main(): Promise<void> {
     // onFixedUpdate  (deterministic 60 Hz physics + input → velocity)
     () => {
       if (hitstopRemaining > 0) return;
+      if (runState !== 'playing') return;
 
       player.fixedUpdate(camera.yaw);
       waves.fixedUpdate(player.getPosition());
@@ -166,7 +210,7 @@ async function main(): Promise<void> {
     },
   );
 
-  loop.start();
+  // Note: loop.start() is called by the MetaUI onStart callback above.
 
   // ── Resize handler ─────────────────────────────────────────────────────
   window.addEventListener('resize', () => {
