@@ -397,6 +397,13 @@ export class Enemy {
     return new THREE.Vector3(p.x, p.y, p.z);
   }
 
+  /** World-space forward direction this enemy is currently facing. */
+  getForward(): THREE.Vector3 {
+    const fwd = new THREE.Vector3(0, 0, 1);
+    fwd.applyQuaternion(this.group.quaternion);
+    return fwd;
+  }
+
   /**
    * Receive damage from a player attack.
    * Applies knockback impulse and starts the hit-flash / hit-stun.

@@ -10,6 +10,9 @@ const HIT_RANGE_FORWARD = 2.0;
 
 // ENEMY → PLAYER base reach
 const ENEMY_ATTACK_REACH = 2.5;
+// Minimum dot-product of (enemy forward) · (dir to player) for a hit to land.
+// cos(100°) ≈ −0.17 — a wide frontal cone; attacks strictly from behind miss.
+const ENEMY_FACING_MIN_DOT = -0.17;
 
 // Impact parameters by attack weight
 const HEAVY_DAMAGE_THRESHOLD = 40;
@@ -36,6 +39,8 @@ export class CombatSystem {
   // Enemies hit during the current player swing
   private readonly hitEnemiesThisSwing = new Set<Enemy>();
   private prevPlayerAttacking = false;
+  // Scratch vector — reused in processEnemyAttacks to avoid per-enemy allocations.
+  private readonly _toPlayer = new THREE.Vector3();
 
   /**
    * Run every visual frame (after physics step).
@@ -138,13 +143,18 @@ export class CombatSystem {
       const dist = enemy.getPosition().distanceTo(playerPos);
       if (dist > ENEMY_ATTACK_REACH) continue;
 
+      // Only land the hit when the player is within the enemy's frontal strike cone.
+      const toPlayer = this._toPlayer.copy(playerPos).sub(enemy.getPosition()).normalize();
+      if (toPlayer.dot(enemy.getForward()) < ENEMY_FACING_MIN_DOT) continue;
+
       enemy.markDamageDealt();
-      player.takeDamage(enemy.attackDamage);
+      // Pass the direction from enemy to player as the recoil direction.
+      player.takeDamage(enemy.attackDamage, toPlayer);
 
       if (!player.isDead) {
         styleMeter?.onPlayerDamage();
-        // Small shake when player is hit
-        vfx.shakeCamera(0.12, 0.2);
+        // Stronger shake when the player is hit
+        vfx.shakeCamera(0.18, 0.25);
       }
     }
   }

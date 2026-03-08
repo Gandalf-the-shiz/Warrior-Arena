@@ -73,6 +73,9 @@ export class PlayerController {
   private isGrounded = false;
   private readonly targetRotation = new THREE.Quaternion();
 
+  // Attack lunge — applied once per swing to avoid per-frame accumulation
+  private attackLungeFired = false;
+
   // Footstep dust
   private readonly dustBursts: DustBurst[] = [];
   private dustTimer = 0;
@@ -132,6 +135,19 @@ export class PlayerController {
     const move = this.input.getMovementVector();
     const hasMove = move.x !== 0 || move.z !== 0;
 
+    // Detect whether the player is mid-swing so we can shape movement.
+    const attackingState = [
+      AnimState.ATTACK_LIGHT_1,
+      AnimState.ATTACK_LIGHT_2,
+      AnimState.ATTACK_LIGHT_3,
+      AnimState.ATTACK_HEAVY,
+    ].includes(this.anim.currentState);
+
+    // Reset lunge flag whenever we leave an attack state.
+    if (!attackingState) {
+      this.attackLungeFired = false;
+    }
+
     if (hasMove) {
       const cos = Math.cos(cameraYaw);
       const sin = Math.sin(cameraYaw);
@@ -139,8 +155,10 @@ export class PlayerController {
       const worldZ = move.x * sin + move.z * cos;
 
       const vel = this.body.linvel();
+      // Reduce lateral steering speed during attacks — commits the swing.
+      const speedScale = attackingState ? 0.35 : 1.0;
       this.body.setLinvel(
-        { x: worldX * MOVE_SPEED, y: vel.y, z: worldZ * MOVE_SPEED },
+        { x: worldX * MOVE_SPEED * speedScale, y: vel.y, z: worldZ * MOVE_SPEED * speedScale },
         true,
       );
 
@@ -148,7 +166,19 @@ export class PlayerController {
       this.targetRotation.setFromEuler(new THREE.Euler(0, angle, 0));
     } else {
       const vel = this.body.linvel();
-      this.body.setLinvel({ x: vel.x * 0.7, y: vel.y, z: vel.z * 0.7 }, true);
+      // During attacks, preserve forward momentum rather than braking hard.
+      const drag = attackingState ? 0.92 : 0.7;
+      this.body.setLinvel({ x: vel.x * drag, y: vel.y, z: vel.z * drag }, true);
+    }
+
+    // ── Attack lunge — one-shot forward impulse at the start of each swing ──
+    if (attackingState && !this.attackLungeFired) {
+      const progress = this.anim.getStateProgress();
+      if (progress >= 0.05) {
+        this.attackLungeFired = true;
+        const fwd = this.getForward();
+        this.body.applyImpulse({ x: fwd.x * 2.5, y: 0, z: fwd.z * 2.5 }, true);
+      }
     }
 
     // Jump
@@ -315,12 +345,22 @@ export class PlayerController {
 
   /**
    * Apply damage to the player, honouring the invincibility window.
+   * An optional `hitDir` (world-space, normalised) applies a recoil impulse
+   * away from the attacker; if omitted a backward impulse is used.
    */
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, hitDir?: THREE.Vector3): void {
     if (this.isDead || this.invincibilityTimer > 0) return;
 
     this.hp = Math.max(0, this.hp - amount);
     this.invincibilityTimer = 0.5;
+
+    // Small recoil impulse so hits feel impactful.
+    // hitDir points from attacker toward player, so it's already the push direction.
+    const recoilDir = hitDir ?? this.getForward().negate(); // fallback: pushed backward
+    this.body.applyImpulse(
+      { x: recoilDir.x * 4, y: 1.0, z: recoilDir.z * 4 },
+      true,
+    );
 
     if (this.hp <= 0) {
       this.isDead = true;
@@ -455,7 +495,11 @@ export class PlayerController {
         burst.active = false;
         mat.opacity = 0;
       } else {
-        const maxAge = Math.max(...Array.from(burst.ages));
+        // Find max age without allocating — avoids Array.from + spread on each frame.
+        let maxAge = 0;
+        for (let i = 0; i < DUST_PARTICLE_COUNT; i++) {
+          if (burst.ages[i]! > maxAge) maxAge = burst.ages[i]!;
+        }
         mat.opacity = Math.max(0, 0.55 * (1 - maxAge / burst.life));
       }
     }

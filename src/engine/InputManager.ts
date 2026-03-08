@@ -144,12 +144,10 @@ export class InputManager {
   }
 
   private bindMouse(canvas: HTMLCanvasElement): void {
-    // Request pointer lock on canvas click
+    // Click is used only to acquire pointer lock; attack is handled via mousedown below.
     canvas.addEventListener('click', () => {
       if (!this.pointerLocked) {
         canvas.requestPointerLock();
-      } else {
-        this.mouseAttack = true;
       }
     });
 
@@ -164,7 +162,8 @@ export class InputManager {
       }
     });
 
-    // Left-click = light attack, right-click = heavy attack when locked
+    // Left-click = light attack, right-click = heavy attack when pointer-locked.
+    // Using mousedown as the single source of attack input to avoid double-firing.
     window.addEventListener('mousedown', (e) => {
       if (this.pointerLocked && e.button === 0) {
         this.mouseAttack = true;
@@ -179,6 +178,14 @@ export class InputManager {
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) {
         this.attackButtonDown = false;
+      }
+    });
+
+    // Suppress the browser context menu while pointer-locked so right-click
+    // heavy attack does not pop up the context menu during gameplay.
+    window.addEventListener('contextmenu', (e) => {
+      if (this.pointerLocked) {
+        e.preventDefault();
       }
     });
   }
