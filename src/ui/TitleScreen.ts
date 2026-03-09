@@ -127,6 +127,38 @@ export class TitleScreen {
     });
   }
 
+  /**
+   * Display the player's persisted best scores below the subtitle.
+   * Call after `new TitleScreen()` and before `waitForStart()`.
+   */
+  showBestScores(best: { bestWave: number; bestKills: number; bestRank: string }): void {
+    if (best.bestWave === 0 && best.bestKills === 0) return; // nothing saved yet
+
+    const el = document.createElement('div');
+    Object.assign(el.style, {
+      position: 'relative',
+      zIndex: '1',
+      fontSize: 'clamp(10px, 1.5vw, 14px)',
+      letterSpacing: '0.25em',
+      color: '#6a5a3a',
+      textTransform: 'uppercase',
+      marginTop: '-48px',
+      marginBottom: '48px',
+      textAlign: 'center',
+    });
+    el.textContent =
+      `BEST  —  Wave ${best.bestWave}  |  ${best.bestKills} Kills  |  Rank ${best.bestRank}`;
+
+    // Insert before the last child (the pulsing prompt)
+    const children = Array.from(this.overlay.children);
+    const prompt = children[children.length - 1];
+    if (prompt) {
+      this.overlay.insertBefore(el, prompt);
+    } else {
+      this.overlay.appendChild(el);
+    }
+  }
+
   // ── Private helpers ─────────────────────────────────────────────────────────
 
   private resizeCanvas(): void {

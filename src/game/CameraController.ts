@@ -33,7 +33,10 @@ export class CameraController {
   private static readonly COLLISION_GRACE_FRAMES = 10;
 
   // Centered behind the player. Positive Z = behind player (player forward = +Z in local space).
+  // NOTE: OFFSET is mutated in-place by setDeathZoom(); readonly prevents reference reassignment only.
   private readonly OFFSET = new THREE.Vector3(0, 2.5, 5.0);
+  private readonly BASE_OFFSET = new THREE.Vector3(0, 2.5, 5.0);
+  private readonly DEATH_OFFSET = new THREE.Vector3(0, 1.8, 2.5);
 
   constructor(
     private readonly camera: THREE.Camera,
@@ -64,6 +67,14 @@ export class CameraController {
       this.shakeDuration = duration;
       this.shakeTimer = 0;
     }
+  }
+
+  /**
+   * Interpolate the camera offset toward a closer position during the death
+   * sequence. t = 0 → normal distance, t = 1 → close-in death zoom.
+   */
+  setDeathZoom(t: number): void {
+    this.OFFSET.lerpVectors(this.BASE_OFFSET, this.DEATH_OFFSET, Math.min(1, Math.max(0, t)));
   }
 
   /**

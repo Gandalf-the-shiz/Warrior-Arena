@@ -10,6 +10,7 @@ import { WaveManager } from '@/game/WaveManager';
 import { CombatSystem } from '@/game/CombatSystem';
 import { VFXManager } from '@/game/VFXManager';
 import { StyleMeter } from '@/game/StyleMeter';
+import type { StyleRank } from '@/game/StyleMeter';
 import { HUD } from '@/ui/HUD';
 import { AudioManager } from '@/engine/AudioManager';
 import { TitleScreen } from '@/ui/TitleScreen';
@@ -18,6 +19,12 @@ import { Minimap } from '@/ui/Minimap';
 import { EnemyHealthBars } from '@/ui/EnemyHealthBars';
 import { LootSystem } from '@/game/LootSystem';
 import { DamageNumbers } from '@/ui/DamageNumbers';
+import { WaveAnnouncer } from '@/ui/WaveAnnouncer';
+import { PauseMenu } from '@/ui/PauseMenu';
+import { ComboDisplay } from '@/ui/ComboDisplay';
+import { ScreenEffects } from '@/ui/ScreenEffects';
+import { EnemySpawnVFX } from '@/game/EnemySpawnVFX';
+import { ScoreManager } from '@/game/ScoreManager';
 
 // ── Loading / error overlay helpers ───────────────────────────────────────
 function showLoading(): HTMLElement {
@@ -113,6 +120,20 @@ async function main(): Promise<void> {
   const loot           = new LootSystem(renderer.scene, audio);
   const damageNumbers  = new DamageNumbers(renderer.camera);
 
+  // ── Phase 2 systems ────────────────────────────────────────────────────
+  const waveAnnouncer  = new WaveAnnouncer();
+  const pauseMenu      = new PauseMenu(audio, input);
+  const comboDisplay   = new ComboDisplay();
+  const screenEffects  = new ScreenEffects();
+  const spawnVFX       = new EnemySpawnVFX(renderer.scene);
+  const scoreManager   = new ScoreManager();
+
+  // Show best scores on title screen
+  titleScreen.showBestScores(scoreManager.getBest());
+
+  // Wire spawn VFX into WaveManager
+  waves.onEnemySpawn = (pos) => { spawnVFX.spawnEffect(pos); };
+
   // ── Pre-warm physics so player settles on the ground before first render
   for (let i = 0; i < 30; i++) {
     physics.step();
@@ -151,10 +172,24 @@ async function main(): Promise<void> {
   let gameOverTimer = 0;
   let gameOverShown = false;
 
+  // ── Death sequence tracking ────────────────────────────────────────────
+  const DEATH_SLOWMO_DURATION = 2.0;
+  let deathSequenceTimer = 0;
+  let deathSequenceStarted = false;
+  let scoresSaved = false;
+  // Best style rank tracker — updated each frame so ScoreManager can access it cleanly
+  let bestRankThisRun: StyleRank = 'D';
+
+  // ── Loot pickup tracking for screen flash ─────────────────────────────
+  let prevPlayerHpForHeal = player.hp;
+
   // ── Game loop ──────────────────────────────────────────────────────────
   const loop = new GameLoop(
     // onUpdate  (variable timestep — mesh sync, lerp, camera)
     (delta) => {
+      // ── Pause check ───────────────────────────────────────────────────
+      pauseMenu.checkInput();
+
       // Always advance elapsed so torches / cape still animate during hitstop
       elapsed += delta;
       arena.update(elapsed, delta);
@@ -166,9 +201,25 @@ async function main(): Promise<void> {
         return;
       }
 
-      player.update(delta);
+      // ── Death sequence slow-motion ─────────────────────────────────────
+      let gameDelta = delta; // may be reduced for slow-motion
+      if (player.isDead && !deathSequenceStarted) {
+        deathSequenceStarted = true;
+        deathSequenceTimer = 0;
+        audio.playDeathSequence();
+      }
+      if (deathSequenceStarted && deathSequenceTimer < DEATH_SLOWMO_DURATION) {
+        deathSequenceTimer += delta; // advance with real time
+        const t = Math.min(1, deathSequenceTimer / DEATH_SLOWMO_DURATION);
+        gameDelta = delta * 0.3; // slow-motion for game systems
+        camera.setDeathZoom(t);
+        // Desaturate canvas (canvas reference already held from line 90)
+        canvas.style.filter = `grayscale(${Math.round(t * 80)}%)`;
+      }
+
+      player.update(gameDelta);
       camera.update(player.getPosition(), delta);
-      waves.update(delta, player.getPosition());
+      waves.update(gameDelta, player.getPosition());
 
       // ── Audio triggers ────────────────────────────────────────────────
       const nowAttacking = player.isAttackingState();
@@ -182,17 +233,22 @@ async function main(): Promise<void> {
       if (nowDodging && !prevDodging) audio.playDodge();
       prevDodging = nowDodging;
 
-      // Player took damage
-      if (player.hp < prevPlayerHp) audio.playPlayerHit();
+      // Player took damage — screen flash + audio
+      if (player.hp < prevPlayerHp) {
+        audio.playPlayerHit();
+        screenEffects.flashDamage();
+      }
       prevPlayerHp = player.hp;
 
       // Player died
       if (player.isDead && !prevPlayerDead) audio.playPlayerDeath();
       prevPlayerDead = player.isDead;
 
-      // New wave started
+      // New wave started — trigger wave announcer
       if (waves.currentWave > prevWave) {
         audio.playWaveStart();
+        audio.playWaveAnnounce();
+        waveAnnouncer.announce(waves.currentWave, waves.getWaveComposition());
         prevWave = waves.currentWave;
       }
 
@@ -220,6 +276,7 @@ async function main(): Promise<void> {
         () => { audio.playHit(); },
         (pos, damage, isHeavy, isFinisher) => {
           damageNumbers.spawn(pos, damage, isHeavy, isFinisher, styleMeter.rank);
+          comboDisplay.onHit(styleMeter.combo, styleMeter.rank);
         },
         (pos) => { loot.spawnDrop(pos); },
       );
@@ -230,24 +287,45 @@ async function main(): Promise<void> {
         player.isAttackingState(),
       );
 
-      styleMeter.update(delta);
-      vfx.update(delta);
+      styleMeter.update(gameDelta);
+      vfx.update(gameDelta);
 
-      // ── New system updates ─────────────────────────────────────────────
+      // ── Phase 2 system updates ─────────────────────────────────────────
+      waveAnnouncer.update(delta);
+      comboDisplay.update(delta, styleMeter.rank);
+      screenEffects.update(delta, player.hp, player.maxHp, player.damageMultiplier);
+      spawnVFX.update(delta);
+
+      // Heal flash: HP increased (loot pickup)
+      if (player.hp > prevPlayerHpForHeal) screenEffects.flashHeal();
+      prevPlayerHpForHeal = player.hp;
+
+      // ── Original system updates ────────────────────────────────────────
       minimap.update(player.getPosition(), player.getFacingYaw(), waves.enemies);
       enemyHealthBars.update(waves.enemies);
-      loot.update(delta, player);
+      loot.update(gameDelta, player);
       damageNumbers.update(delta);
 
-      // Track best style rank for game-over screen
+      // Track best style rank for game-over screen and score saving
       gameOverScreen.updateBestRank(styleMeter.rank);
+      {
+        const RANK_ORDER: StyleRank[] = ['D', 'C', 'B', 'A', 'S'];
+        if (RANK_ORDER.indexOf(styleMeter.rank) > RANK_ORDER.indexOf(bestRankThisRun)) {
+          bestRankThisRun = styleMeter.rank;
+        }
+      }
 
-      // Game-over: wait GAME_OVER_DELAY s after death, then show overlay
+      // Game-over: wait GAME_OVER_DELAY s after death slow-mo, then show overlay
       if (player.isDead && !gameOverShown) {
         gameOverTimer += delta;
         if (gameOverTimer >= GAME_OVER_DELAY) {
           gameOverShown = true;
+          if (!scoresSaved) {
+            scoresSaved = true;
+            scoreManager.save(waves.currentWave, waves.totalKills, bestRankThisRun);
+          }
           gameOverScreen.show(waves.currentWave, waves.totalKills);
+          gameOverScreen.showBestScores(scoreManager.getBest());
         }
       }
 
@@ -271,6 +349,9 @@ async function main(): Promise<void> {
   );
 
   loop.start();
+
+  // Wire pause menu to game loop
+  pauseMenu.setGameLoop(loop);
 
   // ── Resize handler ─────────────────────────────────────────────────────
   window.addEventListener('resize', () => {

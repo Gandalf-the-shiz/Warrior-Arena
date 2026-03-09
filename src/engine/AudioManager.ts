@@ -315,6 +315,121 @@ export class AudioManager {
     }
   }
 
+  /**
+   * Set the master output volume (0.0 – 1.0).
+   * Exposed for the PauseMenu volume slider.
+   */
+  setMasterVolume(volume: number): void {
+    const ctx = this.ensureStarted();
+    if (!ctx || !this.masterGain) return;
+    this.masterGain.gain.setTargetAtTime(
+      Math.max(0, Math.min(1, volume)),
+      ctx.currentTime,
+      0.05,
+    );
+  }
+
+  /** Deep war horn blast — call when a new wave is announced. */
+  playWaveAnnounce(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime + 0.05;
+    const dur = 1.8;
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(80, t);
+    // Slight pitch bend up for drama
+    osc.frequency.linearRampToValueAtTime(95, t + dur * 0.7);
+    osc.frequency.linearRampToValueAtTime(75, t + dur);
+
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 600;
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.55, t + 0.3);   // slow attack
+    g.gain.setValueAtTime(0.55, t + dur * 0.5);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur); // long release
+
+    osc.connect(lp).connect(g).connect(this.masterGain!);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+
+    // Sub-layer: octave up for richness
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'sawtooth';
+    osc2.frequency.setValueAtTime(160, t);
+    osc2.frequency.linearRampToValueAtTime(190, t + dur * 0.7);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0, t);
+    g2.gain.linearRampToValueAtTime(0.18, t + 0.3);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc2.connect(lp).connect(g2).connect(this.masterGain!);
+    osc2.start(t);
+    osc2.stop(t + dur + 0.05);
+  }
+
+  /** UI click — short high blip on pause. */
+  playPause(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 1000;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.25, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    osc.connect(g).connect(this.masterGain!);
+    osc.start(t);
+    osc.stop(t + 0.06);
+  }
+
+  /** UI click — slightly lower pitch on unpause. */
+  playUnpause(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 800;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.25, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    osc.connect(g).connect(this.masterGain!);
+    osc.start(t);
+    osc.stop(t + 0.06);
+  }
+
+  /**
+   * Dramatic death rumble — two layered triangle oscillators (30 Hz + 60 Hz).
+   * Crescendo over 0.5 s, sustain 1 s, slow decay 1.5 s.
+   */
+  playDeathSequence(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    const makeLayer = (freq: number, vol: number): void => {
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.001, t);
+      g.gain.linearRampToValueAtTime(vol, t + 0.5);      // crescendo
+      g.gain.setValueAtTime(vol, t + 1.5);               // sustain
+      g.gain.exponentialRampToValueAtTime(0.001, t + 3.0); // slow decay
+      osc.connect(g).connect(this.masterGain!);
+      osc.start(t);
+      osc.stop(t + 3.1);
+    };
+
+    makeLayer(30, 0.5);
+    makeLayer(60, 0.25);
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private ensureStarted(): AudioContext | null {
