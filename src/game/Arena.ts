@@ -17,8 +17,16 @@ interface DustSystem {
   origins: Float32Array;    // spawn x/z bounds for wrapping
 }
 
+// Instanced spectator row entry
+interface SpectatorRow {
+  mesh: THREE.InstancedMesh;
+  count: number;
+  phases: Float32Array;  // random swaying phases per instance
+  speeds: Float32Array;  // random swaying speeds per instance
+}
+
 /**
- * The gladiator arena: ground, broken pillars, torchlight and invisible walls.
+ * The gladiator arena: ground, Roman colosseum, torchlight and invisible walls.
  */
 export class Arena {
   private readonly torches: Array<{
@@ -29,12 +37,14 @@ export class Arena {
 
   private readonly emberSystems: TorchEmbers[] = [];
   private dustSystem: DustSystem | null = null;
+  private readonly spectatorRows: SpectatorRow[] = [];
 
   constructor(
     private readonly scene: THREE.Scene,
     private readonly physics: PhysicsWorld,
   ) {
     this.buildGround();
+    this.buildArenaFloorDetails();
     this.buildColosseum();
     this.buildLighting();
     this.buildBoundaryWalls();
@@ -48,6 +58,7 @@ export class Arena {
     }
     this.updateEmbers(delta);
     this.updateDust(delta);
+    this.updateSpectators(time);
   }
 
   // ── Ground ──────────────────────────────────────────────────────────────
@@ -55,9 +66,9 @@ export class Arena {
   private buildGround(): void {
     const RADIUS = 30;
     const geo = new THREE.CylinderGeometry(RADIUS, RADIUS, 0.4, 64);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0xc8a96e, // warm sand
-      roughness: 1.0,
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: 0xc8a96e,
+      roughness: 0.9,
       metalness: 0.0,
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -70,184 +81,536 @@ export class Arena {
     this.physics.createCuboidCollider(body, RADIUS, 0.2, RADIUS);
   }
 
+  /** Add blood stains, sand tracks, and weapon-rack props around arena floor. */
+  private buildArenaFloorDetails(): void {
+    // Blood stain decals — small dark red flat planes scattered on floor
+    const bloodMat = new THREE.MeshStandardMaterial({
+      color: 0x5a1010,
+      roughness: 1.0,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+    });
+    for (let i = 0; i < 14; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 4 + Math.random() * 22;
+      const w = 0.6 + Math.random() * 1.4;
+      const d = 0.4 + Math.random() * 1.0;
+      const stain = new THREE.Mesh(new THREE.PlaneGeometry(w, d), bloodMat);
+      stain.rotation.x = -Math.PI / 2;
+      stain.rotation.z = Math.random() * Math.PI;
+      stain.position.set(Math.cos(angle) * r, 0.01, Math.sin(angle) * r);
+      stain.receiveShadow = false;
+      this.scene.add(stain);
+    }
+
+    // Sand groove radial lines from center
+    const trackMat = new THREE.MeshStandardMaterial({ color: 0xa88855, roughness: 1.0 });
+    const TRACK_COUNT = 8;
+    for (let i = 0; i < TRACK_COUNT; i++) {
+      const angle = (i / TRACK_COUNT) * Math.PI * 2;
+      const track = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.02, 27), trackMat);
+      track.rotation.y = angle;
+      track.position.set(0, 0.01, 0);
+      track.receiveShadow = false;
+      this.scene.add(track);
+    }
+
+    // Weapon racks (simple boxes + thin cylinders) near edges
+    const rackMat = new THREE.MeshStandardMaterial({ color: 0x4a3820, roughness: 0.9 });
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x7a8898, metalness: 0.8, roughness: 0.3 });
+    const RACK_ANGLES = [0.4, 2.2, 3.8, 5.2];
+    for (const ang of RACK_ANGLES) {
+      const rx = Math.cos(ang) * 26;
+      const rz = Math.sin(ang) * 26;
+      // Rack frame
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.2, 0.3), rackMat);
+      frame.position.set(rx, 0.4, rz);
+      frame.rotation.y = ang;
+      frame.castShadow = true;
+      this.scene.add(frame);
+      // Weapons leaning (thin cylinders)
+      for (let w = 0; w < 3; w++) {
+        const weapon = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8, 6), metalMat);
+        weapon.position.set(
+          rx + Math.cos(ang) * (w - 1) * 0.55,
+          1.0,
+          rz + Math.sin(ang) * (w - 1) * 0.55,
+        );
+        weapon.rotation.z = 0.15;
+        weapon.castShadow = true;
+        this.scene.add(weapon);
+      }
+    }
+  }
+
   // ── Colosseum ─────────────────────────────────────────────────────────────
 
   private buildColosseum(): void {
-    // Warm limestone / sandstone colour shared by all structural surfaces.
-    // DoubleSide ensures every face (inner curved walls, ledge undersides, etc.)
-    // is visible from wherever the camera happens to be.
-    const stoneMat = new THREE.MeshStandardMaterial({
-      color: 0xe0d0b8,
-      roughness: 0.85,
-      metalness: 0.02,
+    // ── Shared materials ──────────────────────────────────────────────────
+    const podiumMat = new THREE.MeshStandardMaterial({
+      color: 0xd4c4a0, // warm limestone
+      roughness: 0.8,
+      metalness: 0.0,
       side: THREE.DoubleSide,
     });
-
-    // Slightly brighter tone for the decorative columns at arena level
+    const seatMat = new THREE.MeshStandardMaterial({
+      color: 0xc0b090, // slightly darker stone for seating
+      roughness: 0.85,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
     const colMat = new THREE.MeshStandardMaterial({
-      color: 0xf0e0c8,
-      roughness: 0.80,
-      metalness: 0.02,
+      color: 0xe0d4c0, // lighter limestone for columns
+      roughness: 0.8,
+      metalness: 0.0,
+    });
+    const archFillMat = new THREE.MeshStandardMaterial({
+      color: 0x101010, // dark shadow inside arches / gate tunnels
+      roughness: 1.0,
+    });
+    const imperialMat = new THREE.MeshStandardMaterial({
+      color: 0xd4a840,
+      roughness: 0.5,
+      metalness: 0.3,
+      emissive: new THREE.Color(0x6a4000),
+      emissiveIntensity: 0.3,
     });
 
-    // ── Transition ring: sand floor edge → perimeter wall ─────────────────
-    // Fills the gap between the sand cylinder (r = 30) and the wall base (r = 32).
+    // ── Transition ring ───────────────────────────────────────────────────
     const transRing = new THREE.Mesh(
-      new THREE.RingGeometry(30, 32, 32),
-      new THREE.MeshStandardMaterial({ color: 0xd4b888, roughness: 1.0, side: THREE.DoubleSide }),
+      new THREE.RingGeometry(30, 32, 64),
+      new THREE.MeshStandardMaterial({ color: 0xb8a070, roughness: 1.0, side: THREE.DoubleSide }),
     );
     transRing.rotation.x = -Math.PI / 2;
     transRing.position.set(0, 0, 0);
     transRing.receiveShadow = true;
     this.scene.add(transRing);
 
-    // ── Tier 1: Vertical arena perimeter wall (r = 32, h = 5) ────────────
-    const wall1 = new THREE.Mesh(
-      new THREE.CylinderGeometry(32, 32, 5, 64, 1, true),
-      stoneMat,
+    // ── Podium wall (r=32, h=4) with arch niches ─────────────────────────
+    const podWall = new THREE.Mesh(
+      new THREE.CylinderGeometry(32, 32, 4, 64, 1, true),
+      podiumMat,
     );
-    wall1.position.set(0, 2.5, 0);
-    wall1.receiveShadow = true;
-    this.scene.add(wall1);
+    podWall.position.set(0, 2.0, 0);
+    podWall.receiveShadow = true;
+    podWall.castShadow = true;
+    this.scene.add(podWall);
 
-    // Flat ledge at top of tier 1 (r 32 → 38, y = 5)
-    const ledge1 = new THREE.Mesh(new THREE.RingGeometry(32, 38, 32), stoneMat);
+    // Arch niches on podium wall (rectangular alcoves)
+    const NICHE_COUNT = 16;
+    const NICHE_R = 31.9;
+    for (let i = 0; i < NICHE_COUNT; i++) {
+      const angle = (i / NICHE_COUNT) * Math.PI * 2;
+      // Skip niche positions near the 4 gate angles
+      const nearGate = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].some(
+        (g) => Math.abs(((angle - g + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.3,
+      );
+      if (nearGate) continue;
+      const nx = Math.cos(angle) * NICHE_R;
+      const nz = Math.sin(angle) * NICHE_R;
+      const niche = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.2, 1.2), archFillMat);
+      niche.position.set(nx, 1.8, nz);
+      niche.rotation.y = angle;
+      this.scene.add(niche);
+    }
+
+    // Podium ledge top (r 32 → 37, y = 4)
+    const ledge1 = new THREE.Mesh(new THREE.RingGeometry(32, 37, 64), podiumMat);
     ledge1.rotation.x = -Math.PI / 2;
-    ledge1.position.set(0, 5, 0);
+    ledge1.position.set(0, 4, 0);
     ledge1.receiveShadow = true;
     this.scene.add(ledge1);
 
-    // ── Tier 2: Sloped bleacher seating (r 38 → 52, h = 14) ──────────────
-    // The frustum widens upward so the inner face looks like rising seats.
-    const tier2 = new THREE.Mesh(
-      new THREE.CylinderGeometry(52, 38, 14, 64, 1, true),
-      stoneMat,
+    // ── Arena gates (4 large arched openings) ────────────────────────────
+    const GATE_ANGLES = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
+    for (const gAngle of GATE_ANGLES) {
+      this.buildGate(gAngle, 32, archFillMat, podiumMat);
+    }
+
+    // ── First tier stepped seating (r 37 → 44) ───────────────────────────
+    const SEAT_ROWS = 5;
+    for (let row = 0; row < SEAT_ROWS; row++) {
+      const innerR = 37 + row * 1.4;
+      const outerR = innerR + 1.3;
+      const yBase = 4 + row * 1.5;
+
+      // Bench surface
+      const seatRing = new THREE.Mesh(new THREE.RingGeometry(innerR, outerR, 64), seatMat);
+      seatRing.rotation.x = -Math.PI / 2;
+      seatRing.position.set(0, yBase, 0);
+      seatRing.receiveShadow = true;
+      this.scene.add(seatRing);
+
+      // Riser (vertical face)
+      const riser = new THREE.Mesh(
+        new THREE.CylinderGeometry(innerR, innerR, 1.5, 64, 1, true),
+        seatMat,
+      );
+      riser.position.set(0, yBase - 0.75, 0);
+      riser.receiveShadow = true;
+      this.scene.add(riser);
+    }
+    // Spectators on first tier
+    this.buildSpectatorRow(39.5, 5.2, 60, 0.72, colMat);
+    this.buildSpectatorRow(41.0, 6.7, 70, 0.70, colMat);
+    this.buildSpectatorRow(42.5, 8.2, 80, 0.68, colMat);
+
+    // ── Second tier colonnaded ring (r 44 → 52, h 11.5 → 19) ─────────────
+    // Inner wall
+    const t2wall = new THREE.Mesh(
+      new THREE.CylinderGeometry(44, 44, 7.5, 64, 1, true),
+      podiumMat,
     );
-    tier2.position.set(0, 12, 0); // bottom at y = 5, top at y = 19
-    tier2.receiveShadow = true;
-    this.scene.add(tier2);
+    t2wall.position.set(0, 15.25, 0);
+    t2wall.receiveShadow = true;
+    this.scene.add(t2wall);
 
-    // Flat ledge between tier 2 and tier 3 (r 52 → 58, y = 19)
-    const ledge2 = new THREE.Mesh(new THREE.RingGeometry(52, 58, 32), stoneMat);
-    ledge2.rotation.x = -Math.PI / 2;
-    ledge2.position.set(0, 19, 0);
-    ledge2.receiveShadow = true;
-    this.scene.add(ledge2);
+    // Tier 2 seating
+    for (let row = 0; row < 4; row++) {
+      const innerR = 44 + row * 1.8;
+      const outerR = innerR + 1.7;
+      const yBase = 11.5 + row * 1.9;
+      const tier2seat = new THREE.Mesh(new THREE.RingGeometry(innerR, outerR, 64), seatMat);
+      tier2seat.rotation.x = -Math.PI / 2;
+      tier2seat.position.set(0, yBase, 0);
+      this.scene.add(tier2seat);
+      const riser = new THREE.Mesh(
+        new THREE.CylinderGeometry(innerR, innerR, 1.9, 64, 1, true),
+        seatMat,
+      );
+      riser.position.set(0, yBase - 0.95, 0);
+      this.scene.add(riser);
+    }
+    // Tier 2 colonnade of arched columns
+    const T2_COL_COUNT = 28;
+    const T2_COL_R = 51.0;
+    for (let i = 0; i < T2_COL_COUNT; i++) {
+      const angle = (i / T2_COL_COUNT) * Math.PI * 2;
+      const cx = Math.cos(angle) * T2_COL_R;
+      const cz = Math.sin(angle) * T2_COL_R;
+      const col2 = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 8, 8), colMat);
+      col2.position.set(cx, 15, cz);
+      col2.castShadow = true;
+      this.scene.add(col2);
+      const cap2 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.4, 1.0), colMat);
+      cap2.position.set(cx, 19.2, cz);
+      this.scene.add(cap2);
+    }
+    // Spectators on second tier
+    this.buildSpectatorRow(46.0, 13.2, 90, 0.62, colMat);
+    this.buildSpectatorRow(47.8, 15.1, 100, 0.60, colMat);
+    this.buildSpectatorRow(49.5, 17.0, 110, 0.58, colMat);
 
-    // ── Tier 3: Upper bleacher seating (r 58 → 70, h = 14) ───────────────
-    const tier3 = new THREE.Mesh(
-      new THREE.CylinderGeometry(70, 58, 14, 64, 1, true),
-      stoneMat,
+    // Tier 2 lintel ring connecting columns
+    const t2lintel = new THREE.Mesh(
+      new THREE.CylinderGeometry(51.2, 51.2, 0.6, 64, 1, true),
+      podiumMat,
     );
-    tier3.position.set(0, 26, 0); // bottom at y = 19, top at y = 33
-    tier3.receiveShadow = true;
-    this.scene.add(tier3);
+    t2lintel.position.set(0, 19.1, 0);
+    this.scene.add(t2lintel);
 
-    // Top rim cap (r 58 → 72, y = 33) — closes off the upper edge
-    const topCap = new THREE.Mesh(new THREE.RingGeometry(58, 72, 32), stoneMat);
+    // ── Third tier gallery (r 52 → 60) ────────────────────────────────────
+    const t3wall = new THREE.Mesh(
+      new THREE.CylinderGeometry(52, 52, 6.5, 64, 1, true),
+      podiumMat,
+    );
+    t3wall.position.set(0, 22.25, 0);
+    this.scene.add(t3wall);
+
+    // Top gallery colonnade
+    const T3_COL_COUNT = 36;
+    const T3_COL_R = 59.0;
+    for (let i = 0; i < T3_COL_COUNT; i++) {
+      const angle = (i / T3_COL_COUNT) * Math.PI * 2;
+      const cx = Math.cos(angle) * T3_COL_R;
+      const cz = Math.sin(angle) * T3_COL_R;
+      const col3 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.38, 6, 8), colMat);
+      col3.position.set(cx, 22, cz);
+      col3.castShadow = true;
+      this.scene.add(col3);
+    }
+    // Tier 3 spectator ring
+    this.buildSpectatorRow(54.0, 19.5, 130, 0.52, colMat);
+    this.buildSpectatorRow(56.0, 21.0, 140, 0.50, colMat);
+
+    // Top lintel + parapet
+    const t3lintel = new THREE.Mesh(
+      new THREE.CylinderGeometry(59.5, 59.5, 0.7, 64, 1, true),
+      podiumMat,
+    );
+    t3lintel.position.set(0, 25.1, 0);
+    this.scene.add(t3lintel);
+
+    const topCap = new THREE.Mesh(new THREE.RingGeometry(52, 62, 64), podiumMat);
     topCap.rotation.x = -Math.PI / 2;
-    topCap.position.set(0, 33, 0);
+    topCap.position.set(0, 25.5, 0);
     this.scene.add(topCap);
 
-    // Thin outer parapet wall standing on the top rim
     const parapet = new THREE.Mesh(
-      new THREE.CylinderGeometry(71, 71, 3, 64, 1, true),
-      stoneMat,
+      new THREE.CylinderGeometry(61, 61, 2.5, 64, 1, true),
+      podiumMat,
     );
-    parapet.position.set(0, 34.5, 0);
+    parapet.position.set(0, 26.75, 0);
     this.scene.add(parapet);
 
-    // ── Decorative columns along the arena perimeter ──────────────────────
+    // ── Velarium mast poles around top rim ────────────────────────────────
+    const MAST_COUNT = 12;
+    for (let i = 0; i < MAST_COUNT; i++) {
+      const angle = (i / MAST_COUNT) * Math.PI * 2;
+      const mx = Math.cos(angle) * 60.5;
+      const mz = Math.sin(angle) * 60.5;
+      const mast = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.15, 0.2, 5, 6),
+        new THREE.MeshStandardMaterial({ color: 0xa08060, roughness: 0.8 }),
+      );
+      mast.position.set(mx, 30, mz);
+      mast.rotation.z = Math.sin(angle) * 0.15;
+      mast.rotation.x = Math.cos(angle) * 0.15;
+      mast.castShadow = true;
+      this.scene.add(mast);
+    }
+
+    // ── Imperial box (VIP balcony, angle ≈ 0 / facing +Z) ─────────────────
+    this.buildImperialBox(imperialMat, colMat);
+
+    // ── Perimeter decorative columns at arena level ────────────────────────
     const COL_COUNT = 24;
     const COL_RADIUS = 31.5;
     for (let i = 0; i < COL_COUNT; i++) {
       const angle = (i / COL_COUNT) * Math.PI * 2;
+      const nearGate = GATE_ANGLES.some(
+        (g) => Math.abs(((angle - g + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.25,
+      );
+      if (nearGate) continue;
       const x = Math.cos(angle) * COL_RADIUS;
       const z = Math.sin(angle) * COL_RADIUS;
-
-      const col = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.3, 0.4, 5, 8),
-        colMat,
-      );
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 5, 8), colMat);
       col.position.set(x, 2.5, z);
       col.castShadow = true;
       col.receiveShadow = true;
       this.scene.add(col);
-
-      // Small capital (top block) on each column
-      const cap = new THREE.Mesh(
-        new THREE.BoxGeometry(0.9, 0.35, 0.9),
-        colMat,
-      );
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.9), colMat);
       cap.position.set(x, 5.18, z);
       cap.castShadow = true;
       this.scene.add(cap);
     }
   }
 
+  /** Build a gladiator gate arch at a given radial angle in the podium wall. */
+  private buildGate(
+    angle: number,
+    wallR: number,
+    darkMat: THREE.Material,
+    stoneMat: THREE.Material,
+  ): void {
+    const gx = Math.cos(angle) * (wallR - 0.2);
+    const gz = Math.sin(angle) * (wallR - 0.2);
+
+    // Dark tunnel interior
+    const tunnel = new THREE.Mesh(new THREE.BoxGeometry(3.5, 4.2, 1.0), darkMat);
+    tunnel.position.set(gx, 2.1, gz);
+    tunnel.rotation.y = angle;
+    this.scene.add(tunnel);
+
+    // Arch lintel above gate
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.5, 0.8), stoneMat);
+    lintel.position.set(Math.cos(angle) * wallR, 4.4, Math.sin(angle) * wallR);
+    lintel.rotation.y = angle;
+    this.scene.add(lintel);
+
+    // Iron portcullis bars (thin cylinders in a grid)
+    const barMat = new THREE.MeshStandardMaterial({ color: 0x303030, metalness: 0.9, roughness: 0.4 });
+    for (let b = -1; b <= 1; b++) {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 4.0, 5), barMat);
+      const ox = Math.cos(angle + Math.PI / 2) * (b * 0.9);
+      const oz = Math.sin(angle + Math.PI / 2) * (b * 0.9);
+      bar.position.set(gx + ox, 2.0, gz + oz);
+      this.scene.add(bar);
+    }
+    // Horizontal crossbars
+    for (let h = 0; h < 3; h++) {
+      const hbar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.0, 5), barMat);
+      hbar.position.set(gx, 0.8 + h * 1.2, gz);
+      hbar.rotation.z = Math.PI / 2;
+      hbar.rotation.y = angle;
+      this.scene.add(hbar);
+    }
+  }
+
+  /** Build the Imperial VIP balcony on the podium wall facing the arena. */
+  private buildImperialBox(imperialMat: THREE.Material, colMat: THREE.Material): void {
+    // Balcony platform protruding inward at angle=π (toward -Z side)
+    const angle = Math.PI;
+    const bx = Math.cos(angle) * 30;
+    const bz = Math.sin(angle) * 30;
+
+    const platform = new THREE.Mesh(new THREE.BoxGeometry(6.0, 0.4, 2.5), imperialMat);
+    platform.position.set(bx, 4.2, bz);
+    platform.rotation.y = angle;
+    this.scene.add(platform);
+
+    // Low balustrade
+    const railing = new THREE.Mesh(new THREE.BoxGeometry(6.0, 0.6, 0.15), imperialMat);
+    railing.position.set(bx + Math.cos(angle) * 1.2, 4.9, bz + Math.sin(angle) * 1.2);
+    railing.rotation.y = angle;
+    this.scene.add(railing);
+
+    // Two flanking columns
+    for (const side of [-1, 1]) {
+      const cx = bx + Math.cos(angle + Math.PI / 2) * (side * 2.6);
+      const cz = bz + Math.sin(angle + Math.PI / 2) * (side * 2.6);
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 4.5, 8), colMat);
+      col.position.set(cx, 6.6, cz);
+      this.scene.add(col);
+    }
+
+    // 3 emperor/court spectator figures (slightly larger, special material)
+    const empMat = new THREE.MeshStandardMaterial({
+      color: 0xcc9922,
+      roughness: 0.6,
+      metalness: 0.1,
+      emissive: new THREE.Color(0x441100),
+      emissiveIntensity: 0.15,
+    });
+    for (let f = -1; f <= 1; f++) {
+      const fx = bx + Math.cos(angle + Math.PI / 2) * (f * 1.5);
+      const fz = bz + Math.sin(angle + Math.PI / 2) * (f * 1.5);
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.55, 4, 8), empMat);
+      body.position.set(fx, 5.3, fz);
+      this.scene.add(body);
+    }
+  }
+
+  /** Add an instanced row of spectators along a ring at radius r, height y. */
+  private buildSpectatorRow(
+    radius: number,
+    y: number,
+    count: number,
+    scale: number,
+    _colMat: THREE.Material,
+  ): void {
+    // 5 robe colors cycling
+    const ROBE_COLORS = [0xcc3333, 0x3355aa, 0xeeeecc, 0x558855, 0xaa7733];
+    const colorIdx = this.spectatorRows.length % ROBE_COLORS.length;
+    const specMat = new THREE.MeshStandardMaterial({
+      color: ROBE_COLORS[colorIdx],
+      roughness: 0.85,
+    });
+    const geo = new THREE.CapsuleGeometry(0.18, 0.48, 3, 6);
+    const mesh = new THREE.InstancedMesh(geo, specMat, count);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+
+    const phases = new Float32Array(count);
+    const speeds = new Float32Array(count);
+    const dummy = new THREE.Object3D();
+
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const r = radius + (Math.random() - 0.5) * 0.5;
+      dummy.position.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
+      const s = scale * (0.85 + Math.random() * 0.3);
+      dummy.scale.setScalar(s);
+      dummy.rotation.y = angle + Math.PI + (Math.random() - 0.5) * 0.5;
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+      phases[i] = Math.random() * Math.PI * 2;
+      speeds[i] = 0.5 + Math.random() * 1.5;
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    this.scene.add(mesh);
+    this.spectatorRows.push({ mesh, count, phases, speeds });
+  }
+
+  /** Animate spectator swaying. */
+  private updateSpectators(time: number): void {
+    const dummy = new THREE.Object3D();
+    for (const row of this.spectatorRows) {
+      for (let i = 0; i < row.count; i++) {
+        row.mesh.getMatrixAt(i, dummy.matrix);
+        dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+        // Compute base Y rotation from position direction
+        const baseYaw = Math.atan2(dummy.position.x, dummy.position.z) + Math.PI;
+        const sway = Math.sin(time * (row.speeds[i] ?? 1) + (row.phases[i] ?? 0)) * 0.04;
+        dummy.rotation.setFromQuaternion(dummy.quaternion);
+        dummy.rotation.y = baseYaw + sway;
+        dummy.updateMatrix();
+        row.mesh.setMatrixAt(i, dummy.matrix);
+      }
+      row.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
   // ── Torches ──────────────────────────────────────────────────────────────
 
   private addTorch(x: number, y: number, z: number): void {
-    const light = new THREE.PointLight(0xff6622, 3.5, 25, 2);
+    const light = new THREE.PointLight(0xff6622, 5.0, 30, 2);
     light.position.set(x, y, z);
-    light.castShadow = false; // too many shadow maps — skip for performance
+    light.castShadow = false;
     this.scene.add(light);
 
-    // Small visual ember mesh
-    const ember = new THREE.Mesh(
-      new THREE.SphereGeometry(0.12, 6, 4),
-      new THREE.MeshStandardMaterial({
-        color: 0xff8833,
-        emissive: 0xff4400,
-        emissiveIntensity: 2,
-      }),
-    );
-    ember.position.copy(light.position);
-    this.scene.add(ember);
+    // Fire billboard — double-sided plane with emissive orange material
+    const fireMat = new THREE.MeshStandardMaterial({
+      color: 0xff8833,
+      emissive: new THREE.Color(0xff4400),
+      emissiveIntensity: 3.0,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const firePlane = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.6), fireMat);
+    firePlane.position.set(x, y + 0.2, z);
+    this.scene.add(firePlane);
 
     this.torches.push({
       light,
       speed: 2 + Math.random() * 3,
-      base: 3.5,
+      base: 5.0,
     });
 
-    // Create ember particle system for this torch
     this.createEmberSystem(x, y, z);
   }
 
   // ── Lighting ─────────────────────────────────────────────────────────────
 
   private buildLighting(): void {
-    // Bright Mediterranean sun — warm, high-angle, strong shadows
-    const sun = new THREE.DirectionalLight(0xfff0c8, 2.5);
-    sun.position.set(40, 70, 20);
+    // Warm golden sun, slightly off-center for dramatic shadows
+    const sun = new THREE.DirectionalLight(0xfff0c8, 3.0);
+    sun.position.set(35, 65, 25);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near = 0.5;
     sun.shadow.camera.far = 200;
-    sun.shadow.camera.left = -60;
-    sun.shadow.camera.right = 60;
-    sun.shadow.camera.top = 60;
-    sun.shadow.camera.bottom = -60;
-    sun.shadow.bias = -0.001;
+    sun.shadow.camera.left = -70;
+    sun.shadow.camera.right = 70;
+    sun.shadow.camera.top = 70;
+    sun.shadow.camera.bottom = -70;
+    sun.shadow.bias = -0.0005;
     this.scene.add(sun);
 
-    // Warm fill light — bounced light from the sandy arena floor
-    const ambient = new THREE.AmbientLight(0xffefd5, 0.9);
+    // Subtle fill light from opposite side (quarter intensity)
+    const fill = new THREE.DirectionalLight(0xc0d8ff, 0.7);
+    fill.position.set(-30, 30, -20);
+    this.scene.add(fill);
+
+    // Warm ambient
+    const ambient = new THREE.AmbientLight(0xffefd5, 0.4);
     this.scene.add(ambient);
 
-    // Hemisphere light — clear blue sky above, warm sand below
-    const hemi = new THREE.HemisphereLight(0x87ceeb, 0xd4a96e, 1.2);
+    // Hemisphere — sky blue top, warm sand bounce bottom
+    const hemi = new THREE.HemisphereLight(0x87ceeb, 0xd4a96e, 0.8);
     this.scene.add(hemi);
 
-    // 8 torches evenly spaced on the column ring at height 4.5
+    // 8 torches evenly spaced on the column ring at height 4.8
     const TORCH_COUNT = 8;
     const TORCH_RADIUS = 31.5;
     for (let i = 0; i < TORCH_COUNT; i++) {
       const angle = (i / TORCH_COUNT) * Math.PI * 2;
       const x = Math.cos(angle) * TORCH_RADIUS;
       const z = Math.sin(angle) * TORCH_RADIUS;
-      this.addTorch(x, 4.5, z);
+      this.addTorch(x, 4.8, z);
     }
   }
 

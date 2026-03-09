@@ -11,6 +11,7 @@ import { CombatSystem } from '@/game/CombatSystem';
 import { VFXManager } from '@/game/VFXManager';
 import { StyleMeter } from '@/game/StyleMeter';
 import { HUD } from '@/ui/HUD';
+import { AudioManager } from '@/engine/AudioManager';
 
 // ── Loading / error overlay helpers ───────────────────────────────────────
 function showLoading(): HTMLElement {
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
   const combat = new CombatSystem();
   const waves = new WaveManager(renderer.scene, physics, hud);
   const styleMeter = new StyleMeter();
+  const audio = new AudioManager();
 
   // ── Pre-warm physics so player settles on the ground before first render
   for (let i = 0; i < 30; i++) {
@@ -116,6 +118,14 @@ async function main(): Promise<void> {
   // Hitstop: when > 0 the game freezes (camera and rendering still run)
   let hitstopRemaining = 0;
 
+  // ── Audio state tracking ───────────────────────────────────────────────
+  let prevAttacking = false;
+  let prevDodging = false;
+  let prevPlayerHp = player.hp;
+  let prevPlayerDead = false;
+  let prevWave = waves.currentWave;
+  let prevEnemyCount = waves.enemies.length;
+
   // ── Game loop ──────────────────────────────────────────────────────────
   const loop = new GameLoop(
     // onUpdate  (variable timestep — mesh sync, lerp, camera)
@@ -135,6 +145,46 @@ async function main(): Promise<void> {
       camera.update(player.getPosition(), delta, player.getFacingYaw());
       waves.update(delta, player.getPosition());
 
+      // ── Audio triggers ────────────────────────────────────────────────
+      const nowAttacking = player.isAttackingState();
+      if (nowAttacking && !prevAttacking) {
+        audio.playSlash();
+        audio.playGrunt();
+      }
+      prevAttacking = nowAttacking;
+
+      const nowDodging = player.anim.currentState === 'DODGE';
+      if (nowDodging && !prevDodging) audio.playDodge();
+      prevDodging = nowDodging;
+
+      // Player took damage
+      if (player.hp < prevPlayerHp) audio.playPlayerHit();
+      prevPlayerHp = player.hp;
+
+      // Player died
+      if (player.isDead && !prevPlayerDead) audio.playPlayerDeath();
+      prevPlayerDead = player.isDead;
+
+      // New wave started
+      if (waves.currentWave > prevWave) {
+        audio.playWaveStart();
+        prevWave = waves.currentWave;
+      }
+
+      // Enemy killed this frame
+      const nowEnemyCount = waves.enemies.length;
+      if (nowEnemyCount < prevEnemyCount) audio.playEnemyDeath();
+      prevEnemyCount = nowEnemyCount;
+
+      // Combat intensity — ramp up when enemies are close and we're attacking
+      const closestEnemyDist = waves.enemies.reduce((min, e) => {
+        const d = e.getPosition().distanceTo(player.getPosition());
+        return d < min ? d : min;
+      }, 999);
+      const nearFactor = Math.max(0, 1 - closestEnemyDist / 20);
+      const combatIntensity = Math.min(1, nearFactor + (nowAttacking ? 0.4 : 0));
+      audio.setCombatIntensity(combatIntensity);
+
       // Combat hit-detection + VFX
       combat.update(
         player,
@@ -142,6 +192,7 @@ async function main(): Promise<void> {
         vfx,
         (duration) => { hitstopRemaining = Math.max(hitstopRemaining, duration); },
         styleMeter,
+        () => { audio.playHit(); },
       );
 
       // Sword trail — sample tip position every frame during attacks

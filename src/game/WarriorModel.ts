@@ -2,9 +2,9 @@ import * as THREE from 'three';
 
 // ── Shared materials ────────────────────────────────────────────────────────
 const MAT_IRON = new THREE.MeshStandardMaterial({
-  color: 0x8898b8, // brighter polished steel blue
-  metalness: 0.85,
-  roughness: 0.25,
+  color: 0x8898c0, // brighter polished steel blue
+  metalness: 0.9,
+  roughness: 0.2,
 });
 const MAT_SKIN = new THREE.MeshStandardMaterial({
   color: 0xc49a6c, // warm tan skin
@@ -39,7 +39,7 @@ const MAT_BOOT = new THREE.MeshStandardMaterial({
   roughness: 0.8,
 });
 const MAT_CAPE = new THREE.MeshStandardMaterial({
-  color: 0x8a1515, // rich crimson red
+  color: 0xaa1818, // vibrant crimson red
   side: THREE.DoubleSide,
   transparent: true,
   opacity: 0.88,

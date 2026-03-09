@@ -41,6 +41,7 @@ export class CombatSystem {
    * Run every visual frame (after physics step).
    * @param onHitstop  Callback that pauses the game loop for `duration` seconds.
    * @param styleMeter Optional style meter to notify on hits.
+   * @param onEnemyHit Optional callback fired whenever the player lands a hit.
    */
   update(
     player: PlayerController,
@@ -48,10 +49,11 @@ export class CombatSystem {
     vfx: VFXManager,
     onHitstop: (duration: number) => void,
     styleMeter?: StyleMeter,
+    onEnemyHit?: () => void,
   ): void {
     if (player.isDead) return;
 
-    this.processPlayerAttacks(player, enemies, vfx, onHitstop, styleMeter);
+    this.processPlayerAttacks(player, enemies, vfx, onHitstop, styleMeter, onEnemyHit);
     this.processEnemyAttacks(player, enemies, vfx, styleMeter);
   }
 
@@ -63,6 +65,7 @@ export class CombatSystem {
     vfx: VFXManager,
     onHitstop: (duration: number) => void,
     styleMeter?: StyleMeter,
+    onEnemyHit?: () => void,
   ): void {
     const hitInfo = player.getAttackHitInfo();
     const playerAttacking = hitInfo !== null;
@@ -106,6 +109,7 @@ export class CombatSystem {
 
       enemy.takeDamage(hitInfo.damage, knockbackDir);
       styleMeter?.registerHit();
+      onEnemyHit?.();
 
       // VFX
       const hitPos = enemy.getPosition().clone().add(new THREE.Vector3(0, 0.5, 0));

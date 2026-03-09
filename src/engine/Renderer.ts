@@ -9,8 +9,8 @@ const VignetteShader = {
   name: 'VignetteShader',
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
-    offset:   { value: 0.85 },
-    darkness: { value: 0.6 },
+    offset:   { value: 0.75 },
+    darkness: { value: 0.7 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -30,6 +30,42 @@ const VignetteShader = {
       float vignette = 1.0 - smoothstep(offset, offset + 0.35, dot(uv, uv));
       color.rgb *= mix(1.0 - darkness, 1.0, vignette);
       gl_FragColor = color;
+    }
+  `,
+};
+
+// ── Color grading shader — warm shadows, slight desaturation, boosted contrast ──
+const ColorGradeShader = {
+  name: 'ColorGradeShader',
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+      vec4 tex = texture2D(tDiffuse, vUv);
+      vec3 c = tex.rgb;
+
+      // Slight contrast boost
+      c = (c - 0.5) * 1.08 + 0.5;
+
+      // Desaturate slightly (gritty Skyrim look)
+      float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      c = mix(c, vec3(lum), 0.12);
+
+      // Warm the shadows — add orange tint in dark tones
+      float shadow = clamp(1.0 - lum * 2.5, 0.0, 1.0);
+      c += shadow * vec3(0.05, 0.02, 0.0);
+
+      gl_FragColor = vec4(clamp(c, 0.0, 1.0), tex.a);
     }
   `,
 };
@@ -68,8 +104,8 @@ export class Renderer {
     // ── Scene ───────────────────────────────────────────────────────────────
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87ceeb); // clear Mediterranean sky
-    // Subtle distance haze — matches sky colour so far objects fade naturally
-    this.scene.fog = new THREE.FogExp2(0x9ecfe8, 0.004);
+    // Golden atmospheric haze — makes distant tiers fade with depth
+    this.scene.fog = new THREE.FogExp2(0xd4c8a0, 0.002);
 
     // ── Camera ──────────────────────────────────────────────────────────────
     this.camera = new THREE.PerspectiveCamera(
@@ -89,14 +125,18 @@ export class Renderer {
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
       0.4,  // strength
-      0.6,  // radius
-      0.85, // threshold
+      0.5,  // radius
+      0.7,  // threshold
     );
     this.composer.addPass(bloomPass);
 
     // Cinematic vignette — subtle darkening at screen edges
     const vignettePass = new ShaderPass(VignetteShader);
     this.composer.addPass(vignettePass);
+
+    // Color grading — warm shadows, desaturation, contrast boost
+    const colorGradePass = new ShaderPass(ColorGradeShader);
+    this.composer.addPass(colorGradePass);
   }
 
   /** Resize renderer + camera to current window dimensions. */
