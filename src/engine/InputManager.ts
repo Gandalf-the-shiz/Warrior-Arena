@@ -7,6 +7,7 @@
 export class InputManager {
   // ── Keyboard state ─────────────────────────────────────────────────────
   private keys: Record<string, boolean> = {};
+  private pausePressedThisFrame = false;
 
   // ── Mouse state ────────────────────────────────────────────────────────
   private mouseDeltaX = 0;
@@ -113,6 +114,16 @@ export class InputManager {
     return val;
   }
 
+  /**
+   * Edge-triggered — returns true once when Escape is pressed.
+   * Resets after being read.
+   */
+  isPausePressed(): boolean {
+    const val = this.pausePressedThisFrame;
+    this.pausePressedThisFrame = false;
+    return val;
+  }
+
   /** Mouse-delta in pixels since the last frame (pointer-lock). */
   getMouseDelta(): { x: number; y: number } {
     const delta = { x: this.mouseDeltaX, y: this.mouseDeltaY };
@@ -137,6 +148,9 @@ export class InputManager {
   private bindKeyboard(): void {
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
+      if (e.code === 'Escape') {
+        this.pausePressedThisFrame = true;
+      }
     });
     window.addEventListener('keyup', (e) => {
       this.keys[e.code] = false;

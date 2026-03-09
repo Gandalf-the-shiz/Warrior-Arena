@@ -140,4 +140,32 @@ export class GameOverScreen {
       });
     });
   }
+
+  /**
+   * Append a "BEST" row beneath the current-run stats.
+   * Call after show() with the persisted best scores.
+   */
+  showBestScores(best: { bestWave: number; bestKills: number; bestRank: string }): void {
+    if (best.bestWave === 0 && best.bestKills === 0) return;
+
+    const row = document.createElement('div');
+    Object.assign(row.style, {
+      fontSize: 'clamp(11px, 1.7vw, 16px)',
+      letterSpacing: '0.18em',
+      color: '#6a5a3a',
+      marginTop: '-36px',
+      marginBottom: '52px',
+      textAlign: 'center',
+    });
+    row.textContent =
+      `BEST  —  Wave ${best.bestWave}  |  ${best.bestKills} Kills  |  Rank ${best.bestRank}`;
+
+    // Insert before the restart button (last child)
+    const last = this.overlay.lastChild;
+    if (last) {
+      this.overlay.insertBefore(row, last);
+    } else {
+      this.overlay.appendChild(row);
+    }
+  }
 }

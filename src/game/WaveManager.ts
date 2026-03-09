@@ -26,6 +26,12 @@ export class WaveManager {
   // DOM banner element
   private readonly bannerEl: HTMLElement;
 
+  // Optional spawn effect callback (set from main.ts after EnemySpawnVFX is created)
+  onEnemySpawn: ((pos: THREE.Vector3) => void) | null = null;
+
+  // Track the composition of the current wave for the WaveAnnouncer
+  private lastComposition = '';
+
   constructor(
     private readonly scene: THREE.Scene,
     private readonly physics: PhysicsWorld,
@@ -61,6 +67,14 @@ export class WaveManager {
 
   /** Return a read-only view of active enemies (used by CombatSystem). */
   get enemies(): readonly Enemy[] { return this.activeEnemies; }
+
+  /**
+   * Returns a human-readable description of the current wave's enemy composition.
+   * E.g. "3 Skeletons + 2 Ghouls".
+   */
+  getWaveComposition(): string {
+    return this.lastComposition;
+  }
 
   /**
    * Called every fixed-rate physics step.
@@ -134,6 +148,9 @@ export class WaveManager {
   private spawnEnemies(): void {
     const count = Math.min(2 + this._currentWave * 2, 15);
 
+    // Tally counts per type for composition string
+    const typeCounts: Partial<Record<EnemyType, number>> = {};
+
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
       const r = SPAWN_RADIUS + (Math.random() - 0.5) * 4;
@@ -141,9 +158,29 @@ export class WaveManager {
       const sz = Math.sin(angle) * r;
 
       const type = this.pickEnemyType();
+      typeCounts[type] = (typeCounts[type] ?? 0) + 1;
+
       const enemy = new Enemy(this.scene, this.physics, sx, sz, type);
       this.activeEnemies.push(enemy);
+
+      // Trigger spawn VFX
+      if (this.onEnemySpawn) {
+        const pos = new THREE.Vector3(sx, 0, sz);
+        this.onEnemySpawn(pos);
+      }
     }
+
+    // Build composition string
+    const parts: string[] = [];
+    const typeLabel: Record<EnemyType, string> = {
+      [EnemyType.SKELETON]: 'Skeleton',
+      [EnemyType.GHOUL]:    'Ghoul',
+      [EnemyType.BRUTE]:    'Brute',
+    };
+    for (const [type, cnt] of Object.entries(typeCounts) as Array<[EnemyType, number]>) {
+      parts.push(`${cnt} ${typeLabel[type]}${cnt > 1 ? 's' : ''}`);
+    }
+    this.lastComposition = parts.join(' + ');
   }
 
   /** Choose enemy type based on current wave. */
