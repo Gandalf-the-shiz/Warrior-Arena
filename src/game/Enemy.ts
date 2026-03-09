@@ -9,22 +9,22 @@ export enum EnemyType {
   BRUTE    = 'BRUTE',
 }
 
-// ── Shared skeleton materials (brightened for visibility) ────────────────────
+// ── Shared skeleton materials (pale ivory — contrasts with sand floor) ───────
 const MAT_BONE = new THREE.MeshStandardMaterial({
-  color: 0xd8c070,
-  roughness: 0.75,
-  metalness: 0.05,
+  color: 0xe8e0d0, // pale ivory white — distinct from sandy arena
+  roughness: 0.6,
+  metalness: 0.1,
 });
 const MAT_JOINT = new THREE.MeshStandardMaterial({
-  color: 0xaa8a40,
-  roughness: 0.85,
-  metalness: 0.05,
+  color: 0xc0b8a0, // lighter stone gray
+  roughness: 0.7,
+  metalness: 0.1,
 });
 const MAT_WEAPON = new THREE.MeshStandardMaterial({
-  color: 0x886030,
-  roughness: 0.9,
-  metalness: 0.2,
-  emissive: new THREE.Color(0x200800),
+  color: 0x555555, // dark iron gray — contrasts with sand AND bone
+  roughness: 0.5,
+  metalness: 0.6,
+  emissive: new THREE.Color(0x100808),
   emissiveIntensity: 0.5,
 });
 const MAT_EYE = new THREE.MeshStandardMaterial({
@@ -36,12 +36,12 @@ const MAT_EYE = new THREE.MeshStandardMaterial({
 
 // ── Ghoul materials ──────────────────────────────────────────────────────────
 const MAT_GHOUL_BODY = new THREE.MeshStandardMaterial({
-  color: 0x80b080, // pale green, visible
+  color: 0x556b55, // dark muted green — distinct from sand
   roughness: 0.8,
   metalness: 0.0,
 });
 const MAT_GHOUL_JOINT = new THREE.MeshStandardMaterial({
-  color: 0x60905a, // visible green
+  color: 0x3d5a3d, // darker green
   roughness: 0.85,
   metalness: 0.0,
 });
@@ -61,14 +61,14 @@ const MAT_GHOUL_EYE = new THREE.MeshStandardMaterial({
 
 // ── Brute materials ──────────────────────────────────────────────────────────
 const MAT_BRUTE_BODY = new THREE.MeshStandardMaterial({
-  color: 0xa05030, // rusty red-brown, visible
-  roughness: 0.7,
-  metalness: 0.15,
+  color: 0x6b3030, // dark blood red — very distinct from sand
+  roughness: 0.6,
+  metalness: 0.2,
 });
 const MAT_BRUTE_JOINT = new THREE.MeshStandardMaterial({
-  color: 0x704020, // visible brown
-  roughness: 0.8,
-  metalness: 0.1,
+  color: 0x4a2020, // dark maroon
+  roughness: 0.7,
+  metalness: 0.15,
 });
 const MAT_BRUTE_WEAPON = new THREE.MeshStandardMaterial({
   color: 0x604030, // visible dark metal
@@ -706,16 +706,17 @@ export class Enemy {
   }
 
   /**
-   * Create a mesh, add it to the flash-tracking list, and return it.
-   * All meshes created this way participate in the hit-white-flash effect.
+   * Create a mesh with a CLONED material, add it to the flash-tracking list, and return it.
+   * Cloning ensures each enemy has its own material instances so hit-flash on one enemy
+   * doesn't corrupt materials for all enemies of the same type.
    */
   private mkMesh(geo: THREE.BufferGeometry, mat: THREE.Material): THREE.Mesh {
-    const m = new THREE.Mesh(geo, mat);
+    const clonedMat = (mat as THREE.MeshStandardMaterial).clone();
+    const m = new THREE.Mesh(geo, clonedMat);
     m.castShadow = true;
-    const stdMat = mat as THREE.MeshStandardMaterial;
     this.flashMeshes.push(m);
-    this.origEmissiveColors.push(stdMat.emissive.clone());
-    this.origEmissiveIntensities.push(stdMat.emissiveIntensity);
+    this.origEmissiveColors.push(clonedMat.emissive.clone());
+    this.origEmissiveIntensities.push(clonedMat.emissiveIntensity);
     return m;
   }
 

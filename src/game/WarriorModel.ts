@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // ── Shared materials ────────────────────────────────────────────────────────
 const MAT_IRON = new THREE.MeshStandardMaterial({
-  color: 0x7080a8, // polished steel blue
+  color: 0x8898b8, // brighter polished steel blue
   metalness: 0.85,
   roughness: 0.25,
 });
@@ -11,7 +11,7 @@ const MAT_SKIN = new THREE.MeshStandardMaterial({
   roughness: 0.7,
 });
 const MAT_HELMET = new THREE.MeshStandardMaterial({
-  color: 0x6a6a80, // visible steel
+  color: 0x7a7a90, // visible steel
   metalness: 0.8,
   roughness: 0.3,
 });
@@ -25,7 +25,7 @@ const MAT_HORN = new THREE.MeshStandardMaterial({
   roughness: 0.6,
 });
 const MAT_PAULDRON = new THREE.MeshStandardMaterial({
-  color: 0x5a5a78, // dark steel, visible
+  color: 0x6a6a88, // brighter steel, visible
   metalness: 0.8,
   roughness: 0.3,
 });
@@ -113,15 +113,30 @@ export class WarriorModel {
     const torso = mkMesh(new THREE.CapsuleGeometry(0.28, 0.5, 8, 16), MAT_IRON);
     this.torsoGroup.add(torso);
 
-    // Pauldrons (shoulder armour — half-spheres)
-    const pauldronGeo = new THREE.SphereGeometry(0.22, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6);
+    // Chest plate — wider box over the front of the torso for proper knight silhouette
+    const chestPlate = mkMesh(new THREE.BoxGeometry(0.54, 0.44, 0.18), MAT_IRON);
+    chestPlate.position.set(0, 0.08, 0.08);
+    this.torsoGroup.add(chestPlate);
+
+    // Belt / waist piece at the bottom of the torso
+    const belt = mkMesh(new THREE.BoxGeometry(0.50, 0.08, 0.22), MAT_GAUNTLET);
+    belt.position.set(0, -0.22, 0);
+    this.torsoGroup.add(belt);
+
+    // Chainmail tasset / skirt — covers hip joint area where legs connect
+    const tasset = mkMesh(new THREE.CylinderGeometry(0.30, 0.26, 0.22, 12), MAT_IRON);
+    tasset.position.set(0, -0.38, 0);
+    this.torsoGroup.add(tasset);
+
+    // Pauldrons (shoulder armour — larger, more dramatic half-spheres)
+    const pauldronGeo = new THREE.SphereGeometry(0.28, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.6);
     const pauldronL = mkMesh(pauldronGeo, MAT_PAULDRON);
-    pauldronL.position.set(-0.44, 0.35, 0);
+    pauldronL.position.set(-0.46, 0.38, 0);
     pauldronL.rotation.z = Math.PI / 2;
     this.torsoGroup.add(pauldronL);
 
     const pauldronR = mkMesh(pauldronGeo, MAT_PAULDRON);
-    pauldronR.position.set(0.44, 0.35, 0);
+    pauldronR.position.set(0.46, 0.38, 0);
     pauldronR.rotation.z = -Math.PI / 2;
     this.torsoGroup.add(pauldronR);
 
@@ -134,33 +149,44 @@ export class WarriorModel {
     head.scale.set(1, 0.95, 0.95);
     this.headGroup.add(head);
 
-    // Helmet dome (open-bottom hemisphere covering most of the head)
+    // Helmet dome — slightly taller/more imposing than before
     const helmet = mkMesh(
-      new THREE.SphereGeometry(0.215, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62),
+      new THREE.SphereGeometry(0.225, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62),
       MAT_HELMET,
     );
-    helmet.position.set(0, 0.02, 0);
+    helmet.position.set(0, 0.04, 0);
+    helmet.scale.set(1, 1.1, 1); // taller dome for more imposing look
     this.headGroup.add(helmet);
 
-    // Visor T-slit — horizontal bar
-    const visorH = mkMesh(new THREE.BoxGeometry(0.15, 0.038, 0.05), MAT_VISOR);
-    visorH.position.set(0, 0.03, 0.19);
+    // Face plate — covers front of helmet for full-face protection
+    const facePlate = mkMesh(new THREE.BoxGeometry(0.26, 0.18, 0.06), MAT_HELMET);
+    facePlate.position.set(0, -0.04, 0.18);
+    this.headGroup.add(facePlate);
+
+    // Visor T-slit — horizontal bar (glowing red eye slit)
+    const visorH = mkMesh(new THREE.BoxGeometry(0.15, 0.038, 0.06), MAT_VISOR);
+    visorH.position.set(0, 0.03, 0.21);
     this.headGroup.add(visorH);
 
     // Nasal guard — vertical bar
-    const nasal = mkMesh(new THREE.BoxGeometry(0.03, 0.11, 0.04), MAT_HELMET);
-    nasal.position.set(0, -0.03, 0.195);
+    const nasal = mkMesh(new THREE.BoxGeometry(0.03, 0.11, 0.05), MAT_HELMET);
+    nasal.position.set(0, -0.03, 0.215);
     this.headGroup.add(nasal);
+
+    // Neck guard / aventail — armour piece below the helmet
+    const neckGuard = mkMesh(new THREE.CylinderGeometry(0.195, 0.215, 0.12, 12, 1, true), MAT_HELMET);
+    neckGuard.position.set(0, -0.185, 0);
+    this.headGroup.add(neckGuard);
 
     // Viking horns
     const hornGeo = new THREE.ConeGeometry(0.04, 0.22, 6);
     const hornL = mkMesh(hornGeo, MAT_HORN);
-    hornL.position.set(-0.21, 0.12, 0);
+    hornL.position.set(-0.21, 0.14, 0);
     hornL.rotation.z = Math.PI / 2 + 0.25;
     this.headGroup.add(hornL);
 
     const hornR = mkMesh(hornGeo, MAT_HORN);
-    hornR.position.set(0.21, 0.12, 0);
+    hornR.position.set(0.21, 0.14, 0);
     hornR.rotation.z = -(Math.PI / 2 + 0.25);
     this.headGroup.add(hornR);
 
@@ -242,7 +268,7 @@ export class WarriorModel {
     this.capeGroup = new THREE.Group();
     this.capeGroup.position.set(0, 0.32, -0.3);
 
-    this.capeGeo = new THREE.PlaneGeometry(0.55, 0.85, 3, 8);
+    this.capeGeo = new THREE.PlaneGeometry(0.65, 1.0, 3, 8);
     const capeMesh = mkMesh(this.capeGeo, MAT_CAPE, false);
     // Tilt top of cape forward slightly so it hangs from shoulders
     capeMesh.rotation.x = 0.15;
@@ -256,9 +282,9 @@ export class WarriorModel {
 
     // ── Greatsword ────────────────────────────────────────────────────────
     this.swordGroup = new THREE.Group();
-    // Position at end of right arm (gauntlet level)
-    this.swordGroup.position.set(0.0, -0.7, 0.0);
-    this.swordGroup.rotation.x = 0.15;
+    // Position at gauntlet level, slightly forward from hand; flip so blade points DOWN
+    this.swordGroup.position.set(0, -0.66, 0.12);
+    this.swordGroup.rotation.set(Math.PI, 0, 0); // blade points down in idle stance
 
     // Blade
     const blade = mkMesh(new THREE.BoxGeometry(0.06, 1.25, 0.012), MAT_BLADE);
@@ -304,7 +330,7 @@ export class WarriorModel {
       const bx = base[i * 3]!;
       const by = base[i * 3 + 1]!;
       // More wave amplitude toward the bottom of the cape
-      const tNorm = 1 - (by + 0.425) / 0.85; // 0 at top, 1 at bottom
+      const tNorm = 1 - (by + 0.5) / 1.0; // 0 at top, 1 at bottom
       const wave = Math.sin(time * 2.5 + by * 5 + bx * 2) * 0.05 * tNorm;
       posAttr.setX(i, bx + wave);
     }
