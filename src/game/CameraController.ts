@@ -8,11 +8,13 @@ const CAM_LERP = 0.1;
 const SENSITIVITY = 0.003;
 
 /**
- * Third-person over-the-shoulder camera (God-of-War style).
- * Orbits around the player, avoids geometry via raycasting.
+ * Third-person camera (Dark Souls / Skyrim style).
+ * The camera yaw is driven by mouse X input — independent of player facing.
+ * Movement is camera-relative: W always moves toward the camera's look direction.
+ * Orbits around the player and avoids geometry via raycasting.
  */
 export class CameraController {
-  /** Current horizontal yaw (radians). Exposed so PlayerController can read it. */
+  /** Current horizontal yaw (radians). Driven by mouse X. Read by PlayerController for camera-relative movement. */
   yaw = 0;
 
   private pitch = 0.3; // slight downward tilt at start
@@ -30,9 +32,8 @@ export class CameraController {
   // artifacts pushing the camera into a bad initial position.
   private static readonly COLLISION_GRACE_FRAMES = 10;
 
-  // Over-the-shoulder offset in camera-local space (behind, above, slightly right).
-  // Positive Z places the camera *behind* the player (player forward = +Z).
-  private readonly OFFSET = new THREE.Vector3(0.6, 2.5, 4.5);
+  // Centered behind the player. Positive Z = behind player (player forward = +Z in local space).
+  private readonly OFFSET = new THREE.Vector3(0, 2.5, 5.0);
 
   constructor(
     private readonly camera: THREE.Camera,
@@ -67,21 +68,17 @@ export class CameraController {
 
   /**
    * Called every visual frame.
-   * @param playerPos        World-space position of the player.
-   * @param delta            Frame delta time (seconds).
-   * @param playerFacingYaw  Y-axis angle the player character is currently facing (radians).
-   *                         The camera yaw tracks this so the camera stays fixed behind the character.
+   * @param playerPos  World-space position of the player.
+   * @param delta      Frame delta time (seconds).
+   *
+   * Camera yaw is now controlled by mouse X input (not player facing).
+   * This allows the player to look around the arena independently.
    */
-  update(playerPos: THREE.Vector3, delta: number, playerFacingYaw: number): void {
-    // ── Camera yaw tracks player facing (locked behind character) ─────────
-    // Shortest-path angle normalization to [-π, π], then smooth lerp.
-    let diff = playerFacingYaw - this.yaw;
-    diff -= Math.PI * 2 * Math.round(diff / (Math.PI * 2));
-    this.yaw += diff * Math.min(1, 10 * delta);
-
-    // ── Pitch from mouse / touch (up-down tilt only) ──────────────────────
+  update(playerPos: THREE.Vector3, delta: number): void {
+    // ── Camera yaw and pitch from mouse / touch input ─────────────────────
     const mouse = this.input.getMouseDelta();
-    this.pitch -= mouse.y * SENSITIVITY;
+    this.yaw -= mouse.x * SENSITIVITY;   // horizontal orbit from mouse X
+    this.pitch -= mouse.y * SENSITIVITY; // vertical tilt from mouse Y
     this.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, this.pitch));
 
     // ── Compute desired camera position ───────────────────────────────────
