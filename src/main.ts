@@ -25,6 +25,14 @@ import { ComboDisplay } from '@/ui/ComboDisplay';
 import { ScreenEffects } from '@/ui/ScreenEffects';
 import { EnemySpawnVFX } from '@/game/EnemySpawnVFX';
 import { ScoreManager } from '@/game/ScoreManager';
+// ── Phase 3 imports ──────────────────────────────────────────────────────
+import { ArenaHazards } from '@/game/ArenaHazards';
+import { SkillSystem } from '@/game/SkillSystem';
+import { SkillPicker } from '@/ui/SkillPicker';
+import { WeatherSystem } from '@/game/WeatherSystem';
+import { FinisherSystem } from '@/game/FinisherSystem';
+import { BossHealthBar } from '@/ui/BossHealthBar';
+import type { BossEnemy } from '@/game/BossEnemy';
 
 // ── Loading / error overlay helpers ───────────────────────────────────────
 function showLoading(): HTMLElement {
@@ -128,6 +136,45 @@ async function main(): Promise<void> {
   const spawnVFX       = new EnemySpawnVFX(renderer.scene);
   const scoreManager   = new ScoreManager();
 
+  // ── Phase 3 systems ────────────────────────────────────────────────────
+  const hazards     = new ArenaHazards(renderer.scene, physics);
+  const skillSystem = new SkillSystem();
+  const skillPicker = new SkillPicker();
+  const weather     = new WeatherSystem(renderer, audio);
+  const finisher    = new FinisherSystem(audio, vfx, camera);
+  const bossHealthBar = new BossHealthBar();
+
+  // Wire SkillSystem into PlayerController
+  player.skillSystem = skillSystem;
+
+  // Wire audio into hazards
+  hazards.setAudio(audio);
+
+  // Track boss state
+  let activeBoss: BossEnemy | null = null;
+  waves.onBossSpawned = (boss) => {
+    activeBoss = boss;
+    bossHealthBar.show();
+    audio.playBossRoar();
+  };
+
+  // Wire wave-cleared → skill picker → next wave
+  let skillPickerActive = false;
+  waves.onWaveCleared = () => {
+    if (player.isDead) return;
+    skillPickerActive = true;
+    loop.pause();
+    skillSystem.onNewWave();
+    hazards.setWave(waves.currentWave + 1);
+    weather.maybeTransition(waves.currentWave + 1, waveAnnouncer);
+    skillPicker.show(skillSystem, player).then(() => {
+      audio.playSkillSelect();
+      skillPickerActive = false;
+      loop.unpause();
+      waves.startNextWave();
+    });
+  };
+
   // Show best scores on title screen
   titleScreen.showBestScores(scoreManager.getBest());
 
@@ -188,7 +235,10 @@ async function main(): Promise<void> {
     // onUpdate  (variable timestep — mesh sync, lerp, camera)
     (delta) => {
       // ── Pause check ───────────────────────────────────────────────────
-      pauseMenu.checkInput();
+      // Don't allow pause while skill picker is open
+      if (!skillPickerActive) {
+        pauseMenu.checkInput();
+      }
 
       // Always advance elapsed so torches / cape still animate during hitstop
       elapsed += delta;
@@ -216,10 +266,25 @@ async function main(): Promise<void> {
         // Desaturate canvas (canvas reference already held from line 90)
         canvas.style.filter = `grayscale(${Math.round(t * 80)}%)`;
       }
+      // Finisher slow-mo (takes priority if not in death sequence)
+      if (!deathSequenceStarted && finisher.isExecuting) {
+        gameDelta = delta * 0.5;
+      }
 
       player.update(gameDelta);
       camera.update(player.getPosition(), delta);
       waves.update(gameDelta, player.getPosition());
+
+      // ── Phase 3: Finisher system ───────────────────────────────────────
+      finisher.update(
+        gameDelta,
+        player,
+        waves.enemies,
+        input,
+        renderer.camera,
+        styleMeter,
+        (pos) => { loot.spawnDrop(pos); },
+      );
 
       // ── Audio triggers ────────────────────────────────────────────────
       const nowAttacking = player.isAttackingState();
@@ -273,12 +338,24 @@ async function main(): Promise<void> {
         vfx,
         (duration) => { hitstopRemaining = Math.max(hitstopRemaining, duration); },
         styleMeter,
-        () => { audio.playHit(); },
+        () => {
+          audio.playHit();
+          // Soul harvest: killing an enemy restores HP
+          if (skillSystem.hasSoulHarvest()) {
+            player.hp = Math.min(player.hp + 10, player.maxHp);
+          }
+        },
         (pos, damage, isHeavy, isFinisher) => {
           damageNumbers.spawn(pos, damage, isHeavy, isFinisher, styleMeter.rank);
           comboDisplay.onHit(styleMeter.combo, styleMeter.rank);
         },
-        (pos) => { loot.spawnDrop(pos); },
+        (pos) => {
+          loot.spawnDrop(pos);
+          if (skillSystem.hasSoulHarvest()) {
+            player.hp = Math.min(player.hp + 10, player.maxHp);
+          }
+        },
+        waves.activeBoss,
       );
 
       // Sword trail — sample tip position every frame during attacks
@@ -299,6 +376,36 @@ async function main(): Promise<void> {
       // Heal flash: HP increased (loot pickup)
       if (player.hp > prevPlayerHpForHeal) screenEffects.flashHeal();
       prevPlayerHpForHeal = player.hp;
+
+      // ── Phase 3 system updates ──────────────────────────────────────────
+      // Arena hazards
+      hazards.update(gameDelta, player, waves.enemies);
+
+      // Weather
+      weather.update(
+        delta,
+        () => { screenEffects.flashDamage(); }, // lightning flash
+        (intensity, duration) => { vfx.shakeCamera(intensity, duration); },
+      );
+
+      // Boss health bar update
+      if (activeBoss && !activeBoss.isDead) {
+        bossHealthBar.update(activeBoss);
+      } else if (activeBoss?.isDead) {
+        bossHealthBar.hide();
+        activeBoss = null;
+        // Boss death: extra loot + effects (handled by WaveManager via onEnemyKilled)
+        audio.playBossSlam();
+        vfx.shakeCamera(0.4, 0.6);
+      }
+
+      // Chromatic aberration driven by style rank
+      {
+        const rankStrength: Record<StyleRank, number> = {
+          D: 0, C: 0, B: 0, A: 0.4, S: 0.9,
+        };
+        renderer.setChromaticAberration(rankStrength[styleMeter.rank] ?? 0);
+      }
 
       // ── Original system updates ────────────────────────────────────────
       minimap.update(player.getPosition(), player.getFacingYaw(), waves.enemies);
@@ -340,6 +447,7 @@ async function main(): Promise<void> {
 
       player.fixedUpdate(camera.yaw);
       waves.fixedUpdate(player.getPosition());
+      hazards.fixedUpdate();
       physics.step();
     },
     // onRender

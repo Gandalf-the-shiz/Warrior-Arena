@@ -4,7 +4,38 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
-// ── Vignette shader ──────────────────────────────────────────────────────────
+// ── Chromatic Aberration shader ───────────────────────────────────────────────
+const ChromaticAberrationShader = {
+  name: 'ChromaticAberrationShader',
+  uniforms: {
+    tDiffuse:  { value: null as THREE.Texture | null },
+    strength:  { value: 0.0 }, // 0 = off, 1 = max (clamped to subtle range)
+    resolution: { value: new THREE.Vector2(1920, 1080) },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float strength;
+    uniform vec2 resolution;
+    varying vec2 vUv;
+    void main() {
+      vec2 offset = strength * 2.0 / resolution;
+      float r = texture2D(tDiffuse, vUv + offset).r;
+      float g = texture2D(tDiffuse, vUv).g;
+      float b = texture2D(tDiffuse, vUv - offset).b;
+      float a = texture2D(tDiffuse, vUv).a;
+      gl_FragColor = vec4(r, g, b, a);
+    }
+  `,
+};
+
+
 const VignetteShader = {
   name: 'VignetteShader',
   uniforms: {
@@ -73,7 +104,8 @@ const ColorGradeShader = {
 /**
  * Wraps Three.js WebGLRenderer + Scene with the project's visual settings.
  * Shadow maps, tone-mapping, fog and background colour are all set up here.
- * Post-processing: UnrealBloomPass for glowing emissives + vignette ShaderPass.
+ * Post-processing: UnrealBloomPass for glowing emissives + vignette ShaderPass
+ * + chromatic aberration (Phase 3).
  */
 export class Renderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -81,6 +113,12 @@ export class Renderer {
   readonly camera: THREE.PerspectiveCamera;
 
   private readonly composer: EffectComposer;
+  private readonly chromaticAberrationPass: ShaderPass;
+
+  // Saved baseline scene state for weather restore
+  private readonly baseFogColor = new THREE.Color(0xd4c8a0);
+  private readonly baseFogDensity = 0.002;
+  private readonly baseBgColor = new THREE.Color(0x87ceeb);
 
   constructor(canvas: HTMLCanvasElement) {
     // ── WebGL Renderer ──────────────────────────────────────────────────────
@@ -137,6 +175,44 @@ export class Renderer {
     // Color grading — warm shadows, desaturation, contrast boost
     const colorGradePass = new ShaderPass(ColorGradeShader);
     this.composer.addPass(colorGradePass);
+
+    // Chromatic aberration — subtle RGB channel offset during intense moments
+    this.chromaticAberrationPass = new ShaderPass(ChromaticAberrationShader);
+    this.chromaticAberrationPass.uniforms['resolution']!.value.set(
+      window.innerWidth,
+      window.innerHeight,
+    );
+    this.composer.addPass(this.chromaticAberrationPass);
+  }
+
+  /**
+   * Set chromatic aberration strength (0 = off, 1 = maximum).
+   * Called by the game when StyleMeter reaches A/S rank.
+   */
+  setChromaticAberration(strength: number): void {
+    const uniforms = this.chromaticAberrationPass.uniforms;
+    if (uniforms['strength']) {
+      uniforms['strength'].value = Math.max(0, Math.min(1, strength));
+    }
+  }
+
+  /**
+   * Apply weather-driven scene overrides.
+   * @param fogColor  Target fog/bg tint colour (null = restore default)
+   * @param fogDensity  Fog density (null = restore default 0.002)
+   * @param bgColor  Sky background colour (null = restore default)
+   */
+  setWeatherOverrides(
+    fogColor: THREE.Color | null,
+    fogDensity: number | null,
+    bgColor: THREE.Color | null,
+  ): void {
+    const fog = this.scene.fog as THREE.FogExp2 | null;
+    if (fog instanceof THREE.FogExp2) {
+      fog.color.copy(fogColor ?? this.baseFogColor);
+      fog.density = fogDensity ?? this.baseFogDensity;
+    }
+    (this.scene.background as THREE.Color).copy(bgColor ?? this.baseBgColor);
   }
 
   /** Resize renderer + camera to current window dimensions. */
@@ -147,6 +223,10 @@ export class Renderer {
     this.composer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    const uniforms = this.chromaticAberrationPass.uniforms;
+    if (uniforms['resolution']) {
+      uniforms['resolution'].value.set(w, h);
+    }
   }
 
   /** Draw the scene from the active camera using the post-processing pipeline. */

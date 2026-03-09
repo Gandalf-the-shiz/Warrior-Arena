@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { AnimState } from '@/game/AnimationStateMachine';
 import { PlayerController } from '@/game/PlayerController';
 import { Enemy } from '@/game/Enemy';
+import { BossEnemy } from '@/game/BossEnemy';
 import { VFXManager } from '@/game/VFXManager';
 import { StyleMeter } from '@/game/StyleMeter';
 
@@ -44,6 +45,7 @@ export class CombatSystem {
    * @param onEnemyHit Optional callback fired whenever the player lands a hit.
    * @param onHitVFX   Optional callback for spawning damage numbers at hit position.
    * @param onEnemyKilled Optional callback fired with position when a kill lands.
+   * @param boss Optional boss enemy for the current wave.
    */
   update(
     player: PlayerController,
@@ -54,11 +56,19 @@ export class CombatSystem {
     onEnemyHit?: () => void,
     onHitVFX?: (pos: THREE.Vector3, damage: number, isHeavy: boolean, isFinisher: boolean) => void,
     onEnemyKilled?: (position: THREE.Vector3) => void,
+    boss?: BossEnemy | null,
   ): void {
     if (player.isDead) return;
 
     this.processPlayerAttacks(player, enemies, vfx, onHitstop, styleMeter, onEnemyHit, onHitVFX, onEnemyKilled);
     this.processEnemyAttacks(player, enemies, vfx, styleMeter);
+    this.processNecromancerProjectiles(player, enemies);
+
+    // Boss combat
+    if (boss && !boss.isDead) {
+      this.processBossPlayerAttacks(player, boss, vfx, onHitstop, styleMeter, onEnemyHit, onHitVFX, onEnemyKilled);
+      this.processBossAttack(player, boss, vfx, styleMeter);
+    }
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
@@ -113,7 +123,7 @@ export class CombatSystem {
         knockbackDir.set(hitInfo.forward.x, 0, hitInfo.forward.z).normalize();
       }
 
-      const actualDamage = Math.round(hitInfo.damage * player.damageMultiplier);
+      const actualDamage = Math.round(hitInfo.damage * player.getEffectiveDamageMultiplier());
       const enemyPosBefore = enemy.getPosition().clone();
 
       enemy.takeDamage(actualDamage, knockbackDir);
@@ -169,6 +179,110 @@ export class CombatSystem {
         vfx.shakeCamera(0.12, 0.2);
         // Heavy-hit screen-edge blood flash
         if (enemy.attackDamage >= 15) {
+          vfx.spawnBloodFlash();
+        }
+      }
+    }
+  }
+
+  /** Check Necromancer projectile hits against the player. */
+  private processNecromancerProjectiles(
+    player: PlayerController,
+    enemies: readonly Enemy[],
+  ): void {
+    const playerPos = player.getPosition();
+    playerPos.y += 1.0; // check at torso height
+
+    for (const enemy of enemies) {
+      if (enemy.isDead) continue;
+      const dmg = enemy.checkProjectileHit(playerPos, 1.0);
+      if (dmg > 0) {
+        player.takeDamage(dmg);
+      }
+    }
+  }
+
+  /** Process player melee hits on the boss enemy. */
+  private processBossPlayerAttacks(
+    player: PlayerController,
+    boss: BossEnemy,
+    vfx: VFXManager,
+    onHitstop: (duration: number) => void,
+    styleMeter?: StyleMeter,
+    onEnemyHit?: () => void,
+    onHitVFX?: (pos: THREE.Vector3, damage: number, isHeavy: boolean, isFinisher: boolean) => void,
+    onEnemyKilled?: (position: THREE.Vector3) => void,
+  ): void {
+    const hitInfo = player.getAttackHitInfo();
+    if (!hitInfo) return;
+
+    const playerPos = player.getPosition();
+    const hitCenter = playerPos.clone().addScaledVector(hitInfo.forward, HIT_RANGE_FORWARD);
+
+    // Boss is large — use bigger hit radius
+    const dist = boss.getPosition().distanceTo(hitCenter);
+    if (dist > hitInfo.hitRadius * 2.5) return;
+
+    if (this.hitEnemiesThisSwing.has(boss as unknown as Enemy)) return;
+    this.hitEnemiesThisSwing.add(boss as unknown as Enemy);
+
+    const knockbackDir = boss.getPosition().clone().sub(playerPos).normalize();
+    const actualDamage = Math.round(hitInfo.damage * player.getEffectiveDamageMultiplier());
+    const bossPosBefore = boss.getPosition().clone();
+
+    boss.takeDamage(actualDamage, knockbackDir);
+    styleMeter?.registerHit();
+    onEnemyHit?.();
+
+    if (boss.isDead) {
+      onEnemyKilled?.(bossPosBefore);
+    }
+
+    const hitPos = boss.getPosition().clone().add(new THREE.Vector3(0, 1.0, 0));
+    vfx.spawnBlood(hitPos, knockbackDir);
+
+    const isHeavy = actualDamage >= HEAVY_DAMAGE_THRESHOLD;
+    vfx.shakeCamera(
+      isHeavy ? HEAVY_SHAKE_INTENSITY * 1.5 : LIGHT_SHAKE_INTENSITY,
+      isHeavy ? HEAVY_SHAKE_DURATION * 1.5 : LIGHT_SHAKE_DURATION,
+    );
+
+    const damagePos = bossPosBefore.clone().add(new THREE.Vector3(0, 2.5, 0));
+    onHitVFX?.(damagePos, actualDamage, isHeavy, false);
+
+    onHitstop(isHeavy ? HEAVY_HITSTOP * 1.5 : LIGHT_HITSTOP);
+  }
+
+  /** Process boss melee attack on the player. */
+  private processBossAttack(
+    player: PlayerController,
+    boss: BossEnemy,
+    vfx: VFXManager,
+    styleMeter?: StyleMeter,
+  ): void {
+    const playerPos = player.getPosition();
+
+    if (boss.isInStrikeWindow()) {
+      const dist = boss.getPosition().distanceTo(playerPos);
+      if (dist <= ENEMY_ATTACK_REACH * 1.8) {
+        boss.markDamageDealt();
+        player.takeDamage(boss.attackDamage);
+        if (!player.isDead) {
+          styleMeter?.onPlayerDamage();
+          vfx.shakeCamera(0.22, 0.35);
+          vfx.spawnBloodFlash();
+        }
+      }
+    }
+
+    // Boss slam shockwave damages anything in 5-unit radius
+    if (boss.isSlamActive()) {
+      const slamPos = boss.getSlamPosition();
+      if (player.getPosition().distanceTo(slamPos) <= 5.0) {
+        boss.markSlamDealt();
+        player.takeDamage(boss.attackDamage);
+        if (!player.isDead) {
+          vfx.shakeCamera(0.3, 0.5);
           vfx.spawnBloodFlash();
         }
       }

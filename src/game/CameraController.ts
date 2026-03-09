@@ -78,6 +78,15 @@ export class CameraController {
   }
 
   /**
+   * Subtle finisher zoom — slightly closer than normal, lerps back when t=0.
+   * t = 1 → finisher active, t = 0 → return to normal.
+   */
+  setFinisherZoom(t: number): void {
+    const FINISHER_OFFSET = new THREE.Vector3(0, 2.0, 3.5);
+    this.OFFSET.lerpVectors(this.BASE_OFFSET, FINISHER_OFFSET, Math.min(1, Math.max(0, t)));
+  }
+
+  /**
    * Called every visual frame.
    * @param playerPos  World-space position of the player.
    * @param delta      Frame delta time (seconds).

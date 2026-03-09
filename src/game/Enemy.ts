@@ -4,9 +4,10 @@ import { PhysicsWorld } from '@/engine/PhysicsWorld';
 
 // ── Enemy type ───────────────────────────────────────────────────────────────
 export enum EnemyType {
-  SKELETON = 'SKELETON',
-  GHOUL    = 'GHOUL',
-  BRUTE    = 'BRUTE',
+  SKELETON    = 'SKELETON',
+  GHOUL       = 'GHOUL',
+  BRUTE       = 'BRUTE',
+  NECROMANCER = 'NECROMANCER',
 }
 
 // ── Shared skeleton materials (pale ivory — contrasts with sand floor) ───────
@@ -84,6 +85,47 @@ const MAT_BRUTE_EYE = new THREE.MeshStandardMaterial({
   roughness: 0.3,
 });
 
+// ── Necromancer materials ─────────────────────────────────────────────────────
+const MAT_NECRO_ROBE = new THREE.MeshStandardMaterial({
+  color: 0x1a0a2e, // dark purple-black robe
+  roughness: 0.85,
+  metalness: 0.05,
+});
+const MAT_NECRO_SKULL = new THREE.MeshStandardMaterial({
+  color: 0xc8b8a0, // pale skull
+  roughness: 0.5,
+  metalness: 0.1,
+});
+const MAT_NECRO_EYE = new THREE.MeshStandardMaterial({
+  color: 0x000000,
+  emissive: new THREE.Color(0x00ff55),
+  emissiveIntensity: 5.0,
+  roughness: 0.3,
+});
+const MAT_NECRO_STAFF = new THREE.MeshStandardMaterial({
+  color: 0x2a1a0a, // dark wood
+  roughness: 0.8,
+  metalness: 0.1,
+});
+const MAT_NECRO_ORB = new THREE.MeshStandardMaterial({
+  color: 0x00ff55,
+  emissive: new THREE.Color(0x00ff55),
+  emissiveIntensity: 4.0,
+  roughness: 0.2,
+  metalness: 0.2,
+  transparent: true,
+  opacity: 0.9,
+});
+const MAT_NECRO_PROJECTILE = new THREE.MeshStandardMaterial({
+  color: 0x00ff55,
+  emissive: new THREE.Color(0x00ff55),
+  emissiveIntensity: 6.0,
+  roughness: 0.2,
+  metalness: 0.3,
+  transparent: true,
+  opacity: 0.85,
+});
+
 // ── Internal AI state ───────────────────────────────────────────────────────
 enum EnemyAIState {
   IDLE,
@@ -93,6 +135,9 @@ enum EnemyAIState {
   ATTACK_STRIKE,
   HIT,
   DEAD,
+  // Necromancer-specific states
+  RETREAT, // backing away from player
+  CAST,    // charging a spell projectile
 }
 
 // Collision groups: membership = bit 2 (enemy group), filter = everything except bit 2.
@@ -119,6 +164,11 @@ const TYPE_STATS: Record<EnemyType, {
     minHp: 75, hpRange: 11, speed: 2.0, damage: 20,
     windupTime: 0.8, knockbackResistance: 0.4, scale: 1.4,
     attackCooldownBase: 2.0,
+  },
+  [EnemyType.NECROMANCER]: {
+    minHp: 38, hpRange: 4, speed: 3.0, damage: 15,
+    windupTime: 0.8, knockbackResistance: 0.9, scale: 1.05,
+    attackCooldownBase: 3.0,
   },
 };
 
@@ -187,6 +237,15 @@ export class Enemy {
   // Detached limb groups that fade out after dismemberment
   private readonly detachedLimbs: Array<{ group: THREE.Group; age: number }> = [];
 
+  // ── Necromancer projectile system ─────────────────────────────────────────
+  private readonly projectiles: Array<{
+    mesh: THREE.Mesh;
+    light: THREE.PointLight;
+    velocity: THREE.Vector3;
+    age: number;
+  }> = [];
+  private castTimer = 0;
+
   constructor(
     private readonly scene: THREE.Scene,
     physics: PhysicsWorld,
@@ -235,6 +294,10 @@ export class Enemy {
         matBody = MAT_BRUTE_BODY; matJoint = MAT_BRUTE_JOINT;
         matWeapon = MAT_BRUTE_WEAPON; matEye = MAT_BRUTE_EYE;
         break;
+      case EnemyType.NECROMANCER:
+        matBody = MAT_NECRO_ROBE; matJoint = MAT_NECRO_SKULL;
+        matWeapon = MAT_NECRO_STAFF; matEye = MAT_NECRO_EYE;
+        break;
       default:
         matBody = MAT_BONE; matJoint = MAT_JOINT;
         matWeapon = MAT_WEAPON; matEye = MAT_EYE;
@@ -247,47 +310,79 @@ export class Enemy {
     this.torsoGroup = new THREE.Group();
     this.torsoGroup.position.set(0, 0.1, 0);
 
-    // Ribcage cylinder
-    this.torsoGroup.add(this.mkMesh(
-      new THREE.CylinderGeometry(0.13, 0.15, 0.46, 12), matBody,
-    ));
+    if (enemyType === EnemyType.NECROMANCER) {
+      // ── Necromancer: tall dark robe body ──────────────────────────────
+      // Long robe body
+      const robe = this.mkMesh(new THREE.BoxGeometry(0.28, 1.1, 0.18), matBody);
+      robe.position.set(0, -0.1, 0);
+      this.torsoGroup.add(robe);
 
-    // Spine connecting ribcage to hips
-    const spine = this.mkMesh(new THREE.CylinderGeometry(0.034, 0.038, 0.5, 8), matBody);
-    spine.position.set(0, -0.28, 0);
-    this.torsoGroup.add(spine);
+      // Robe bottom flare
+      const robeFlair = this.mkMesh(new THREE.CylinderGeometry(0.2, 0.28, 0.3, 8), matBody);
+      robeFlair.position.set(0, -0.65, 0);
+      this.torsoGroup.add(robeFlair);
 
-    // Hip bone
-    const hip = this.mkMesh(new THREE.BoxGeometry(0.3, 0.09, 0.14), matBody);
-    hip.position.set(0, -0.51, 0);
-    this.torsoGroup.add(hip);
+      // ── Head (floating skull) ─────────────────────────────────────────
+      this.headGroup = new THREE.Group();
+      this.headGroup.position.set(0, 0.72, 0);
 
-    // ── Head ──────────────────────────────────────────────────────────────
-    this.headGroup = new THREE.Group();
-    this.headGroup.position.set(0, 0.6, 0);
+      const skull2 = this.mkMesh(new THREE.SphereGeometry(0.14, 10, 8), matJoint);
+      skull2.scale.set(1, 1.15, 0.88);
+      this.headGroup.add(skull2);
 
-    const skull = this.mkMesh(new THREE.SphereGeometry(0.15, 10, 8), matBody);
-    skull.scale.set(1, 1.08, 0.92);
-    this.headGroup.add(skull);
+      // Green glowing eyes
+      const eL = this.mkMesh(new THREE.SphereGeometry(0.038, 6, 4), matEye);
+      eL.position.set(-0.055, 0.02, 0.1);
+      this.headGroup.add(eL);
+      const eR = eL.clone();
+      eR.position.set(0.055, 0.02, 0.1);
+      this.headGroup.add(eR);
 
-    const jaw = this.mkMesh(new THREE.BoxGeometry(0.12, 0.06, 0.09), matBody);
-    jaw.position.set(0, -0.12, 0.05);
-    this.headGroup.add(jaw);
+    } else {
+      // ── Standard (Skeleton/Ghoul/Brute) torso ───────────────────────
+      // Ribcage cylinder
+      this.torsoGroup.add(this.mkMesh(
+        new THREE.CylinderGeometry(0.13, 0.15, 0.46, 12), matBody,
+      ));
 
-    // Glowing eye sockets
-    const eyeL = this.mkMesh(new THREE.SphereGeometry(0.036, 5, 4), matEye);
-    eyeL.position.set(-0.058, 0.022, 0.11);
-    this.headGroup.add(eyeL);
+      // Spine connecting ribcage to hips
+      const spine = this.mkMesh(new THREE.CylinderGeometry(0.034, 0.038, 0.5, 8), matBody);
+      spine.position.set(0, -0.28, 0);
+      this.torsoGroup.add(spine);
 
-    const eyeR = this.mkMesh(new THREE.SphereGeometry(0.036, 5, 4), matEye);
-    eyeR.position.set(0.058, 0.022, 0.11);
-    this.headGroup.add(eyeR);
+      // Hip bone
+      const hip = this.mkMesh(new THREE.BoxGeometry(0.3, 0.09, 0.14), matBody);
+      hip.position.set(0, -0.51, 0);
+      this.torsoGroup.add(hip);
+
+      // ── Head ──────────────────────────────────────────────────────────
+      this.headGroup = new THREE.Group();
+      this.headGroup.position.set(0, 0.6, 0);
+
+      const skull = this.mkMesh(new THREE.SphereGeometry(0.15, 10, 8), matBody);
+      skull.scale.set(1, 1.08, 0.92);
+      this.headGroup.add(skull);
+
+      const jaw = this.mkMesh(new THREE.BoxGeometry(0.12, 0.06, 0.09), matBody);
+      jaw.position.set(0, -0.12, 0.05);
+      this.headGroup.add(jaw);
+
+      // Glowing eye sockets
+      const eyeL = this.mkMesh(new THREE.SphereGeometry(0.036, 5, 4), matEye);
+      eyeL.position.set(-0.058, 0.022, 0.11);
+      this.headGroup.add(eyeL);
+
+      const eyeR = this.mkMesh(new THREE.SphereGeometry(0.036, 5, 4), matEye);
+      eyeR.position.set(0.058, 0.022, 0.11);
+      this.headGroup.add(eyeR);
+    }
 
     // Dim head point light — makes the enemy glow in the dark
     const HEAD_LIGHT_COLORS: Record<EnemyType, number> = {
-      [EnemyType.SKELETON]: 0xff0000,
-      [EnemyType.GHOUL]:    0x00ff44,
-      [EnemyType.BRUTE]:    0xff4400,
+      [EnemyType.SKELETON]:    0xff0000,
+      [EnemyType.GHOUL]:       0x00ff44,
+      [EnemyType.BRUTE]:       0xff4400,
+      [EnemyType.NECROMANCER]: 0x00ff55,
     };
     this.headLight = new THREE.PointLight(HEAD_LIGHT_COLORS[enemyType], 0.3, 4, 2);
     this.headLight.position.set(0, 0, 0);
@@ -299,17 +394,29 @@ export class Enemy {
     this.leftArmGroup = new THREE.Group();
     this.leftArmGroup.position.set(-0.19, 0.24, 0);
 
-    const lUpper = this.mkMesh(new THREE.CylinderGeometry(0.035, 0.031, 0.36, 10), matBody);
+    const lUpper = this.mkMesh(
+      new THREE.CylinderGeometry(0.035, 0.031, 0.36, 10),
+      enemyType === EnemyType.NECROMANCER ? matBody : matBody,
+    );
     lUpper.position.set(0, -0.18, 0);
     this.leftArmGroup.add(lUpper);
 
-    const lElbow = this.mkMesh(new THREE.SphereGeometry(0.042, 8, 6), matJoint);
-    lElbow.position.set(0, -0.36, 0);
-    this.leftArmGroup.add(lElbow);
+    if (enemyType !== EnemyType.NECROMANCER) {
+      const lElbow = this.mkMesh(new THREE.SphereGeometry(0.042, 8, 6), matJoint);
+      lElbow.position.set(0, -0.36, 0);
+      this.leftArmGroup.add(lElbow);
+    }
 
     const lLower = this.mkMesh(new THREE.CylinderGeometry(0.027, 0.023, 0.32, 10), matBody);
     lLower.position.set(0, -0.52, 0);
     this.leftArmGroup.add(lLower);
+
+    // Skeletal hand for necromancer
+    if (enemyType === EnemyType.NECROMANCER) {
+      const lHand = this.mkMesh(new THREE.SphereGeometry(0.04, 6, 4), matJoint);
+      lHand.position.set(0, -0.68, 0);
+      this.leftArmGroup.add(lHand);
+    }
 
     this.torsoGroup.add(this.leftArmGroup);
 
@@ -321,9 +428,11 @@ export class Enemy {
     rUpper.position.set(0, -0.18, 0);
     this.rightArmGroup.add(rUpper);
 
-    const rElbow = this.mkMesh(new THREE.SphereGeometry(0.042, 8, 6), matJoint);
-    rElbow.position.set(0, -0.36, 0);
-    this.rightArmGroup.add(rElbow);
+    if (enemyType !== EnemyType.NECROMANCER) {
+      const rElbow = this.mkMesh(new THREE.SphereGeometry(0.042, 8, 6), matJoint);
+      rElbow.position.set(0, -0.36, 0);
+      this.rightArmGroup.add(rElbow);
+    }
 
     const rLower = this.mkMesh(new THREE.CylinderGeometry(0.027, 0.023, 0.32, 10), matBody);
     rLower.position.set(0, -0.52, 0);
@@ -344,6 +453,20 @@ export class Enemy {
       const clubHandle = this.mkMesh(new THREE.CylinderGeometry(0.035, 0.03, 0.36, 8), matJoint);
       clubHandle.position.set(0, -0.01, 0);
       this.weaponGroup.add(clubHandle);
+    } else if (enemyType === EnemyType.NECROMANCER) {
+      // Necromancer staff — tall cylinder with glowing orb on top
+      this.weaponGroup.position.set(0.04, -0.5, 0);
+      this.weaponGroup.rotation.z = 0;
+      const staffShaft = this.mkMesh(new THREE.CylinderGeometry(0.022, 0.025, 1.1, 8), matWeapon);
+      staffShaft.position.set(0, 0.35, 0);
+      this.weaponGroup.add(staffShaft);
+      const staffOrb = this.mkMesh(new THREE.SphereGeometry(0.08, 10, 8), MAT_NECRO_ORB);
+      staffOrb.position.set(0, 0.95, 0);
+      this.weaponGroup.add(staffOrb);
+      // Orb glow
+      const orbLight = new THREE.PointLight(0x00ff55, 0.6, 3, 2);
+      orbLight.position.set(0, 0.95, 0);
+      this.weaponGroup.add(orbLight);
     } else {
       const clubHead = this.mkMesh(new THREE.BoxGeometry(0.068, 0.7, 0.057), matWeapon);
       clubHead.position.set(0, 0.35, 0);
@@ -362,13 +485,15 @@ export class Enemy {
     ltThigh.position.set(0, -0.19, 0);
     this.leftLegGroup.add(ltThigh);
 
-    const ltKnee = this.mkMesh(new THREE.SphereGeometry(0.054, 8, 6), matJoint);
-    ltKnee.position.set(0, -0.38, 0);
-    this.leftLegGroup.add(ltKnee);
+    if (enemyType !== EnemyType.NECROMANCER) {
+      const ltKnee = this.mkMesh(new THREE.SphereGeometry(0.054, 8, 6), matJoint);
+      ltKnee.position.set(0, -0.38, 0);
+      this.leftLegGroup.add(ltKnee);
 
-    const ltShin = this.mkMesh(new THREE.CylinderGeometry(0.036, 0.032, 0.34, 10), matBody);
-    ltShin.position.set(0, -0.55, 0);
-    this.leftLegGroup.add(ltShin);
+      const ltShin = this.mkMesh(new THREE.CylinderGeometry(0.036, 0.032, 0.34, 10), matBody);
+      ltShin.position.set(0, -0.55, 0);
+      this.leftLegGroup.add(ltShin);
+    }
 
     this.torsoGroup.add(this.leftLegGroup);
 
@@ -380,13 +505,15 @@ export class Enemy {
     rtThigh.position.set(0, -0.19, 0);
     this.rightLegGroup.add(rtThigh);
 
-    const rtKnee = this.mkMesh(new THREE.SphereGeometry(0.054, 8, 6), matJoint);
-    rtKnee.position.set(0, -0.38, 0);
-    this.rightLegGroup.add(rtKnee);
+    if (enemyType !== EnemyType.NECROMANCER) {
+      const rtKnee = this.mkMesh(new THREE.SphereGeometry(0.054, 8, 6), matJoint);
+      rtKnee.position.set(0, -0.38, 0);
+      this.rightLegGroup.add(rtKnee);
 
-    const rtShin = this.mkMesh(new THREE.CylinderGeometry(0.036, 0.032, 0.34, 10), matBody);
-    rtShin.position.set(0, -0.55, 0);
-    this.rightLegGroup.add(rtShin);
+      const rtShin = this.mkMesh(new THREE.CylinderGeometry(0.036, 0.032, 0.34, 10), matBody);
+      rtShin.position.set(0, -0.55, 0);
+      this.rightLegGroup.add(rtShin);
+    }
 
     this.torsoGroup.add(this.rightLegGroup);
 
@@ -467,6 +594,89 @@ export class Enemy {
       this.attackCooldown -= 1 / 60;
     }
 
+    // ── Necromancer special AI ────────────────────────────────────────────
+    if (this.type === EnemyType.NECROMANCER) {
+      switch (this.aiState) {
+        case EnemyAIState.IDLE:
+        case EnemyAIState.WANDER: {
+          if (distToPlayer < 20) {
+            this.aiState = EnemyAIState.AGGRO;
+          }
+          this.body.setLinvel({ x: 0, y: vel.y, z: 0 }, true);
+          break;
+        }
+
+        case EnemyAIState.AGGRO: {
+          // Transition to CAST when in range and cooldown ready
+          if (distToPlayer <= 15 && this.attackCooldown <= 0) {
+            this.aiState = EnemyAIState.CAST;
+            this.stateTimer = 0;
+            this.castTimer = 0;
+            this.body.setLinvel({ x: 0, y: vel.y, z: 0 }, true);
+            break;
+          }
+          // Retreat if player is too close
+          if (distToPlayer < 8) {
+            this.aiState = EnemyAIState.RETREAT;
+            break;
+          }
+          // Move toward preferred range (8-15 units)
+          if (distToPlayer > 15) {
+            const spd = this.moveSpeed;
+            if (distToPlayer > 0) {
+              this.body.setLinvel(
+                { x: (dx / distToPlayer) * spd, y: vel.y, z: (dz / distToPlayer) * spd },
+                true,
+              );
+              this.targetRotation.setFromEuler(new THREE.Euler(0, Math.atan2(dx, dz), 0));
+            }
+          } else {
+            // In preferred range — face player and wait
+            if (distToPlayer > 0) {
+              this.targetRotation.setFromEuler(new THREE.Euler(0, Math.atan2(dx, dz), 0));
+            }
+            this.body.setLinvel({ x: vel.x * 0.85, y: vel.y, z: vel.z * 0.85 }, true);
+          }
+          break;
+        }
+
+        case EnemyAIState.RETREAT: {
+          // Back away from player at half speed
+          if (distToPlayer >= 8) {
+            this.aiState = EnemyAIState.AGGRO;
+            break;
+          }
+          const spd = this.moveSpeed * 0.7;
+          if (distToPlayer > 0) {
+            this.body.setLinvel(
+              { x: -(dx / distToPlayer) * spd, y: vel.y, z: -(dz / distToPlayer) * spd },
+              true,
+            );
+            // Still face player while retreating
+            this.targetRotation.setFromEuler(new THREE.Euler(0, Math.atan2(dx, dz), 0));
+          }
+          break;
+        }
+
+        case EnemyAIState.CAST:
+        case EnemyAIState.HIT:
+          this.body.setLinvel({ x: vel.x * 0.85, y: vel.y, z: vel.z * 0.85 }, true);
+          if (distToPlayer > 0) {
+            this.targetRotation.setFromEuler(new THREE.Euler(0, Math.atan2(dx, dz), 0));
+          }
+          break;
+
+        case EnemyAIState.DEAD:
+          this.body.setLinvel({ x: vel.x * 0.8, y: vel.y, z: vel.z * 0.8 }, true);
+          break;
+
+        default:
+          this.body.setLinvel({ x: 0, y: vel.y, z: 0 }, true);
+      }
+      return;
+    }
+
+    // ── Standard melee AI ─────────────────────────────────────────────────
     switch (this.aiState) {
       case EnemyAIState.IDLE:
       case EnemyAIState.WANDER: {
@@ -609,6 +819,70 @@ export class Enemy {
           this.isDead = true;
         }
         break;
+
+      // ── Necromancer-specific states ─────────────────────────────────────
+      case EnemyAIState.RETREAT:
+        this.animRun(0.5);
+        break;
+
+      case EnemyAIState.CAST: {
+        this.castTimer += delta;
+        // Charging animation — raise staff arm
+        this.rightArmGroup.rotation.x = Math.min(-this.castTimer / this.windupTime * 1.2, -1.2);
+        if (this.castTimer >= this.windupTime && this.projectiles.length === 0) {
+          // Fire the projectile
+          const myPosC = new THREE.Vector3(pos.x, pos.y, pos.z);
+          const dir = new THREE.Vector3(
+            playerPos.x - myPosC.x,
+            0,
+            playerPos.z - myPosC.z,
+          ).normalize();
+
+          const projGeo = new THREE.SphereGeometry(0.12, 8, 6);
+          const projMat = MAT_NECRO_PROJECTILE.clone();
+          const projMesh = new THREE.Mesh(projGeo, projMat);
+          projMesh.position.set(
+            myPosC.x + dir.x * 0.5,
+            myPosC.y + 1.2,
+            myPosC.z + dir.z * 0.5,
+          );
+          projMesh.castShadow = true;
+
+          const projLight = new THREE.PointLight(0x00ff55, 1.2, 5, 2);
+          projMesh.add(projLight);
+
+          this.scene.add(projMesh);
+          this.projectiles.push({
+            mesh: projMesh,
+            light: projLight,
+            velocity: new THREE.Vector3(dir.x * 12, 0, dir.z * 12),
+            age: 0,
+          });
+
+          this.attackCooldown = this.attackCooldownBase;
+          this.aiState = EnemyAIState.AGGRO;
+          this.stateTimer = 0;
+          this.castTimer = 0;
+          this.rightArmGroup.rotation.x = 0;
+        }
+        break;
+      }
+    }
+
+    // ── Necromancer projectile updates ─────────────────────────────────────
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const proj = this.projectiles[i]!;
+      proj.age += delta;
+
+      proj.mesh.position.addScaledVector(proj.velocity, delta);
+      // Gentle bobbing
+      proj.mesh.position.y = this.group.position.y + 1.2 + Math.sin(proj.age * 8) * 0.05;
+
+      // Remove if too old
+      if (proj.age >= 3.0) {
+        this.scene.remove(proj.mesh);
+        this.projectiles.splice(i, 1);
+      }
     }
 
     // Tick detached limb fade-out
@@ -646,7 +920,31 @@ export class Enemy {
     for (const limb of this.detachedLimbs) {
       this.scene.remove(limb.group);
     }
+    // Clean up Necromancer projectiles
+    for (const proj of this.projectiles) {
+      this.scene.remove(proj.mesh);
+    }
+    this.projectiles.length = 0;
     physics.world.removeRigidBody(this.body);
+  }
+
+  /**
+   * Check if any projectile from this Necromancer hits the target position.
+   * Returns the damage dealt (attackDamage) if a hit occurs, 0 otherwise.
+   * Consumed (removed) projectiles that land a hit.
+   */
+  checkProjectileHit(targetPos: THREE.Vector3, hitRadius = 1.0): number {
+    if (this.type !== EnemyType.NECROMANCER) return 0;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const proj = this.projectiles[i]!;
+      const dist = proj.mesh.position.distanceTo(targetPos);
+      if (dist <= hitRadius) {
+        this.scene.remove(proj.mesh);
+        this.projectiles.splice(i, 1);
+        return this.attackDamage;
+      }
+    }
+    return 0;
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────

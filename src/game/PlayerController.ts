@@ -4,6 +4,7 @@ import { PhysicsWorld } from '@/engine/PhysicsWorld';
 import { InputManager } from '@/engine/InputManager';
 import { WarriorModel } from '@/game/WarriorModel';
 import { AnimationStateMachine, AnimState } from '@/game/AnimationStateMachine';
+import type { SkillSystem } from '@/game/SkillSystem';
 
 const MOVE_SPEED = 7;
 const JUMP_IMPULSE = 8;
@@ -57,6 +58,9 @@ export class PlayerController {
   /** Damage multiplier applied to all attacks (set by loot system). */
   damageMultiplier = 1.0;
   private damageBoostTimer = 0;
+
+  /** Optional skill system — set from main.ts after creation. */
+  skillSystem: SkillSystem | null = null;
 
   // ── Stamina ───────────────────────────────────────────────────────────────
   stamina = MAX_STAMINA;
@@ -360,7 +364,11 @@ export class PlayerController {
   takeDamage(amount: number): void {
     if (this.isDead || this.invincibilityTimer > 0) return;
 
-    this.hp = Math.max(0, this.hp - amount);
+    // Apply defense reduction from skill system
+    const defMult = this.skillSystem?.getDefenseMultiplier() ?? 1.0;
+    const finalDamage = Math.max(1, Math.round(amount * defMult));
+
+    this.hp = Math.max(0, this.hp - finalDamage);
     this.invincibilityTimer = 0.5;
 
     if (this.hp <= 0) {
@@ -369,6 +377,14 @@ export class PlayerController {
     } else {
       this.anim.setState(AnimState.HIT);
     }
+  }
+
+  /**
+   * Returns the effective damage multiplier including loot boosts and skill bonuses.
+   */
+  getEffectiveDamageMultiplier(): number {
+    const skillMult = this.skillSystem?.getDamageMultiplier() ?? 1.0;
+    return this.damageMultiplier * skillMult;
   }
 
   /**
