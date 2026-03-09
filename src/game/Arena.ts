@@ -10,6 +10,13 @@ interface TorchEmbers {
   origins?: Float32Array;   // spawn positions, initialised on first update
 }
 
+// Atmospheric dust motes
+interface DustSystem {
+  points: THREE.Points;
+  velocities: Float32Array; // 3 floats per mote
+  origins: Float32Array;    // spawn x/z bounds for wrapping
+}
+
 /**
  * The gladiator arena: ground, broken pillars, torchlight and invisible walls.
  */
@@ -21,6 +28,7 @@ export class Arena {
   }> = [];
 
   private readonly emberSystems: TorchEmbers[] = [];
+  private dustSystem: DustSystem | null = null;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -30,6 +38,7 @@ export class Arena {
     this.buildColosseum();
     this.buildLighting();
     this.buildBoundaryWalls();
+    this.buildAtmosphericDust();
   }
 
   /** Call every frame with elapsed time (seconds) and delta to animate torches and particles. */
@@ -38,6 +47,7 @@ export class Arena {
       torch.light.intensity = torch.base + Math.sin(time * torch.speed) * 0.5;
     }
     this.updateEmbers(delta);
+    this.updateDust(delta);
   }
 
   // ── Ground ──────────────────────────────────────────────────────────────
@@ -229,6 +239,16 @@ export class Arena {
     // Hemisphere light — clear blue sky above, warm sand below
     const hemi = new THREE.HemisphereLight(0x87ceeb, 0xd4a96e, 1.2);
     this.scene.add(hemi);
+
+    // 8 torches evenly spaced on the column ring at height 4.5
+    const TORCH_COUNT = 8;
+    const TORCH_RADIUS = 31.5;
+    for (let i = 0; i < TORCH_COUNT; i++) {
+      const angle = (i / TORCH_COUNT) * Math.PI * 2;
+      const x = Math.cos(angle) * TORCH_RADIUS;
+      const z = Math.sin(angle) * TORCH_RADIUS;
+      this.addTorch(x, 4.5, z);
+    }
   }
 
   // ── Invisible boundary walls ─────────────────────────────────────────────
@@ -345,5 +365,90 @@ export class Arena {
       const avgAge = Array.from(sys.ages).reduce((a, b) => a + b, 0) / count;
       mat.opacity = Math.max(0.3, 0.9 * (1 - avgAge / sys.life));
     }
+  }
+
+  // ── Atmospheric dust ─────────────────────────────────────────────────────
+
+  private buildAtmosphericDust(): void {
+    const COUNT = 200;
+    const ARENA_R = 26;
+    const positions = new Float32Array(COUNT * 3);
+    const velocities = new Float32Array(COUNT * 3);
+    const origins = new Float32Array(COUNT * 3);
+
+    for (let i = 0; i < COUNT; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.random() * ARENA_R;
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+      const y = Math.random() * 2.5; // hover between 0 and 2.5m
+
+      positions[i * 3]     = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+      origins[i * 3]       = x;
+      origins[i * 3 + 1]   = y;
+      origins[i * 3 + 2]   = z;
+
+      // Slow drifting velocities (gentle wind)
+      velocities[i * 3]     = (Math.random() - 0.5) * 0.3;
+      velocities[i * 3 + 1] = (Math.random() - 0.5) * 0.05;
+      velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.3;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const mat = new THREE.PointsMaterial({
+      color: 0xd4b888,
+      size: 0.04,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+
+    const points = new THREE.Points(geo, mat);
+    this.scene.add(points);
+
+    this.dustSystem = { points, velocities, origins };
+  }
+
+  private updateDust(delta: number): void {
+    if (!this.dustSystem) return;
+
+    const { points, velocities, origins } = this.dustSystem;
+    const posAttr = points.geometry.attributes.position as THREE.BufferAttribute;
+    const count = posAttr.count;
+    const ARENA_R = 26;
+
+    for (let i = 0; i < count; i++) {
+      let px = posAttr.getX(i) + velocities[i * 3]!     * delta;
+      let py = posAttr.getY(i) + velocities[i * 3 + 1]! * delta;
+      let pz = posAttr.getZ(i) + velocities[i * 3 + 2]! * delta;
+
+      // Gentle upward drift, clamp height
+      if (py < 0) py = 0;
+      if (py > 3) { py = 3; velocities[i * 3 + 1]! *= -1; }
+
+      // Wrap at arena boundary
+      const dist = Math.sqrt(px * px + pz * pz);
+      if (dist > ARENA_R) {
+        px = origins[i * 3]!;
+        pz = origins[i * 3 + 2]!;
+      }
+
+      posAttr.setXYZ(i, px, py, pz);
+
+      // Slight random drift variance
+      velocities[i * 3]!     += (Math.random() - 0.5) * 0.02;
+      velocities[i * 3 + 2]! += (Math.random() - 0.5) * 0.02;
+
+      // Dampen to prevent runaway speeds
+      velocities[i * 3]!     *= 0.99;
+      velocities[i * 3 + 2]! *= 0.99;
+    }
+
+    posAttr.needsUpdate = true;
   }
 }

@@ -145,6 +145,10 @@ export class CombatSystem {
         styleMeter?.onPlayerDamage();
         // Small shake when player is hit
         vfx.shakeCamera(0.12, 0.2);
+        // Heavy-hit screen-edge blood flash
+        if (enemy.attackDamage >= 15) {
+          vfx.spawnBloodFlash();
+        }
       }
     }
   }
