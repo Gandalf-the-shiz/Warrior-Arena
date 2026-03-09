@@ -66,13 +66,20 @@ export class CameraController {
 
   /**
    * Called every visual frame.
-   * @param playerPos  World-space position of the player.
-   * @param delta      Frame delta time (seconds).
+   * @param playerPos        World-space position of the player.
+   * @param delta            Frame delta time (seconds).
+   * @param playerFacingYaw  Y-axis angle the player character is currently facing (radians).
+   *                         The camera yaw tracks this so the camera stays fixed behind the character.
    */
-  update(playerPos: THREE.Vector3, delta: number): void {
-    // ── Rotate from mouse / touch ─────────────────────────────────────────
+  update(playerPos: THREE.Vector3, delta: number, playerFacingYaw: number): void {
+    // ── Camera yaw tracks player facing (locked behind character) ─────────
+    // Shortest-path angle normalization to [-π, π], then smooth lerp.
+    let diff = playerFacingYaw - this.yaw;
+    diff -= Math.PI * 2 * Math.round(diff / (Math.PI * 2));
+    this.yaw += diff * Math.min(1, 10 * delta);
+
+    // ── Pitch from mouse / touch (up-down tilt only) ──────────────────────
     const mouse = this.input.getMouseDelta();
-    this.yaw -= mouse.x * SENSITIVITY;
     this.pitch -= mouse.y * SENSITIVITY;
     this.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, this.pitch));
 
