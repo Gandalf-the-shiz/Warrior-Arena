@@ -430,6 +430,261 @@ export class AudioManager {
     makeLayer(60, 0.25);
   }
 
+  // ── Phase 3 sound effects ─────────────────────────────────────────────────
+
+  /** Spike trap activation — metallic grinding noise + low triangle. */
+  playSpikeTrap(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const dur = 0.3;
+
+    // Metallic scraping — noise through bandpass at 400 Hz
+    const buf = this.makeNoiseBuffer(ctx, dur);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 400;
+    bp.Q.value = 5;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.3, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(bp).connect(ng).connect(this.masterGain!);
+    src.start(t);
+    src.stop(t + dur + 0.01);
+
+    // Low triangle at 80 Hz
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = 80;
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.18, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(og).connect(this.masterGain!);
+    osc.start(t);
+    osc.stop(t + dur + 0.01);
+  }
+
+  /** Fire pillar jet — filtered noise highpass 800 Hz, 2s with crackling. */
+  playFireJet(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const dur = 2.0;
+
+    const buf = this.makeNoiseBuffer(ctx, dur);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 800;
+    const g = ctx.createGain();
+    // Amplitude ramp: quiet → loud → fade
+    g.gain.setValueAtTime(0.001, t);
+    g.gain.linearRampToValueAtTime(0.25, t + 0.3);
+    g.gain.setValueAtTime(0.22, t + 1.5);
+    g.gain.linearRampToValueAtTime(0.001, t + dur);
+    src.connect(hp).connect(g).connect(this.masterGain!);
+    src.start(t);
+    src.stop(t + dur + 0.01);
+
+    // Crackling overlay — short noise bursts at random intervals
+    for (let i = 0; i < 8; i++) {
+      const ot = t + Math.random() * dur;
+      this.shortNoiseBurst(ctx, 2000 + Math.random() * 2000, 3, 0.08, 0.05);
+      void ot; // suppress lint warning — shortNoiseBurst uses ctx.currentTime internally
+    }
+  }
+
+  /** Thunder rumble — 40 Hz triangle slow attack + noise crackle. */
+  playThunder(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    // Deep 40 Hz rumble
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = 40;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.001, t);
+    g.gain.linearRampToValueAtTime(0.35, t + 0.5);    // slow attack
+    g.gain.setValueAtTime(0.35, t + 1.0);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 4.0); // long release
+    osc.connect(g).connect(this.masterGain!);
+    osc.start(t);
+    osc.stop(t + 4.1);
+
+    // Noise crackle layer
+    const nbuf = this.makeNoiseBuffer(ctx, 0.8);
+    const nsrc = ctx.createBufferSource();
+    nsrc.buffer = nbuf;
+    const nlp = ctx.createBiquadFilter();
+    nlp.type = 'lowpass';
+    nlp.frequency.value = 400;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.2, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+    nsrc.connect(nlp).connect(ng).connect(this.masterGain!);
+    nsrc.start(t + 0.3);
+    nsrc.stop(t + 1.2);
+  }
+
+  /** Finisher execution impact — sub bass + metallic ring + noise burst. */
+  playFinisher(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    // 40 Hz sub sine (0.2s)
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.value = 40;
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.5, t);
+    sg.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    sub.connect(sg).connect(this.masterGain!);
+    sub.start(t);
+    sub.stop(t + 0.22);
+
+    // Metallic ring — 800 Hz sine decaying over 0.5s
+    const ring = ctx.createOscillator();
+    ring.type = 'sine';
+    ring.frequency.value = 800;
+    const rg = ctx.createGain();
+    rg.gain.setValueAtTime(0.3, t);
+    rg.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    ring.connect(rg).connect(this.masterGain!);
+    ring.start(t);
+    ring.stop(t + 0.52);
+
+    // Noise burst (0.1s)
+    this.shortNoiseBurst(ctx, 1000, 4, 0.4, 0.1);
+  }
+
+  /** Boss spawn roar — very low sawtooth 50 Hz with LFO growl modulation, 1.5s. */
+  playBossRoar(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const dur = 1.5;
+
+    // Base sawtooth at 50 Hz
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 50;
+
+    // LFO at 5 Hz for growl modulation (AM synthesis)
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 5;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 0.4;
+    lfo.connect(lfoGain);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.001, t);
+    g.gain.linearRampToValueAtTime(0.45, t + 0.5);   // slow attack
+    g.gain.setValueAtTime(0.45, t + 1.0);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    // Modulate amplitude with LFO
+    lfoGain.connect(g.gain);
+
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 300;
+
+    osc.connect(lp).connect(g).connect(this.masterGain!);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+    lfo.start(t);
+    lfo.stop(t + dur + 0.05);
+  }
+
+  /** Boss ground slam — massive sub bass 30 Hz + noise + delayed echoes. */
+  playBossSlam(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    // Sub bass hit — 30 Hz, 0.5s decay
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(80, t);
+    osc.frequency.exponentialRampToValueAtTime(30, t + 0.1);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.6, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    osc.connect(g).connect(this.masterGain!);
+    osc.start(t);
+    osc.stop(t + 0.55);
+
+    // Noise burst
+    this.shortNoiseBurst(ctx, 200, 2, 0.35, 0.15);
+
+    // Delayed echo (reverb-like) — repeat at 0.3s and 0.6s, decreasing volume
+    for (const [delay, vol] of [[0.3, 0.3] as const, [0.6, 0.15] as const]) {
+      const e = ctx.createOscillator();
+      e.type = 'sine';
+      e.frequency.value = 35;
+      const eg = ctx.createGain();
+      eg.gain.setValueAtTime(vol, t + delay);
+      eg.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.3);
+      e.connect(eg).connect(this.masterGain!);
+      e.start(t + delay);
+      e.stop(t + delay + 0.35);
+    }
+  }
+
+  /** Skill selection confirmation — ascending C5→E5→G5 arpeggio. */
+  playSkillSelect(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const g = ctx.createGain();
+      const nt = t + i * 0.08;
+      g.gain.setValueAtTime(0.2, nt);
+      g.gain.exponentialRampToValueAtTime(0.001, nt + 0.2);
+      osc.connect(g).connect(this.masterGain!);
+      osc.start(nt);
+      osc.stop(nt + 0.22);
+    });
+  }
+
+  /** Weather transition — filtered noise sweep from low to high, 2s. */
+  playWeatherTransition(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const dur = 2.0;
+
+    const buf = this.makeNoiseBuffer(ctx, dur);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(100, t);
+    bp.frequency.exponentialRampToValueAtTime(4000, t + dur);
+    bp.Q.value = 2;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.001, t);
+    g.gain.linearRampToValueAtTime(0.15, t + 0.5);
+    g.gain.setValueAtTime(0.12, t + 1.5);
+    g.gain.linearRampToValueAtTime(0.001, t + dur);
+    src.connect(bp).connect(g).connect(this.masterGain!);
+    src.start(t);
+    src.stop(t + dur + 0.01);
+  }
+
+  // ── Phase 3 sound effects end ─────────────────────────────────────────────
+
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private ensureStarted(): AudioContext | null {

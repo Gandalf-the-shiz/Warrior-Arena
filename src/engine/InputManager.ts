@@ -8,6 +8,7 @@ export class InputManager {
   // ── Keyboard state ─────────────────────────────────────────────────────
   private keys: Record<string, boolean> = {};
   private pausePressedThisFrame = false;
+  private finisherPressedThisFrame = false;
 
   // ── Mouse state ────────────────────────────────────────────────────────
   private mouseDeltaX = 0;
@@ -124,6 +125,16 @@ export class InputManager {
     return val;
   }
 
+  /**
+   * Edge-triggered — returns true once when F is pressed (finisher / execution).
+   * Resets after being read.
+   */
+  isFinisherReady(): boolean {
+    const val = this.finisherPressedThisFrame;
+    this.finisherPressedThisFrame = false;
+    return val;
+  }
+
   /** Mouse-delta in pixels since the last frame (pointer-lock). */
   getMouseDelta(): { x: number; y: number } {
     const delta = { x: this.mouseDeltaX, y: this.mouseDeltaY };
@@ -150,6 +161,9 @@ export class InputManager {
       this.keys[e.code] = true;
       if (e.code === 'Escape') {
         this.pausePressedThisFrame = true;
+      }
+      if (e.code === 'KeyF') {
+        this.finisherPressedThisFrame = true;
       }
     });
     window.addEventListener('keyup', (e) => {

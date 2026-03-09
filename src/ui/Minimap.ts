@@ -10,9 +10,10 @@ const SCALE        = (RADIUS - 10) / ARENA_RADIUS; // world units → pixels
 
 // Dot colours per enemy type
 const DOT_COLOR: Record<EnemyType, string> = {
-  [EnemyType.SKELETON]: '#dd4444',
-  [EnemyType.GHOUL]:    '#44cc66',
-  [EnemyType.BRUTE]:    '#ff8800',
+  [EnemyType.SKELETON]:    '#dd4444',
+  [EnemyType.GHOUL]:       '#44cc66',
+  [EnemyType.BRUTE]:       '#ff8800',
+  [EnemyType.NECROMANCER]: '#aa44ff',
 };
 
 /**
