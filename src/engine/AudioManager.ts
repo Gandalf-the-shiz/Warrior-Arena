@@ -685,7 +685,7 @@ export class AudioManager {
 
   // ── Phase 3 sound effects end ─────────────────────────────────────────────
 
-  // ── Phase 4 sound effects ─────────────────────────────────────────────────
+  // ── New sound effects ─────────────────────────────────────────────────
 
   /** Dull metallic thud — block absorbing a hit. */
   playBlock(): void {

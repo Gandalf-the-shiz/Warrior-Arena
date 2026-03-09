@@ -34,7 +34,7 @@ import { WeatherSystem } from '@/game/WeatherSystem';
 import { FinisherSystem } from '@/game/FinisherSystem';
 import { BossHealthBar } from '@/ui/BossHealthBar';
 import type { BossEnemy } from '@/game/BossEnemy';
-// ── Phase 4 imports ──────────────────────────────────────────────────────
+// ── Phase 3 (continued) imports ──────────────────────────────────────────────────────
 import { LevelSystem } from '@/game/LevelSystem';
 import type { EnemyXPType } from '@/game/LevelSystem';
 import { LevelHUD } from '@/ui/LevelHUD';
@@ -150,7 +150,7 @@ async function main(): Promise<void> {
   const finisher    = new FinisherSystem(audio, vfx, camera);
   const bossHealthBar = new BossHealthBar();
 
-  // ── Phase 4 systems ────────────────────────────────────────────────────
+  // ── New systems (continued from Phase 3) ────────────────────────────────────────────────────
   const levelSystem = new LevelSystem();
   const levelHUD    = new LevelHUD();
   const weatherHUD  = new WeatherHUD();
@@ -394,9 +394,18 @@ async function main(): Promise<void> {
           if (skillSystem.hasSoulHarvest()) {
             player.hp = Math.min(player.hp + 10, player.maxHp);
           }
-          // XP for killing a regular enemy (type determined by current wave composition)
-          // Use SKELETON as default; WaveManager gives us the type via enemies list
-          levelSystem.addXP('SKELETON' as EnemyXPType, styleMeter.rank);
+          // Award XP scaled by wave — higher waves have tougher (higher-XP) enemy mixes
+          const wave = waves.currentWave;
+          let xpType: EnemyXPType = 'SKELETON';
+          if (wave >= 5) {
+            const r = Math.random();
+            if (r < 0.40) xpType = 'SKELETON';
+            else if (r < 0.68) xpType = 'GHOUL';
+            else xpType = 'BRUTE';
+          } else if (wave >= 3) {
+            xpType = Math.random() < 0.5 ? 'SKELETON' : 'GHOUL';
+          }
+          levelSystem.addXP(xpType, styleMeter.rank);
           killStreakCount++;
           vfx.onKill(player.getPosition());
           if (killStreakCount === 5) { audio.playKillStreak5(); }
@@ -461,7 +470,7 @@ async function main(): Promise<void> {
       loot.update(gameDelta, player);
       damageNumbers.update(delta);
 
-      // ── Phase 4 updates ────────────────────────────────────────────────
+      // ── New system updates ────────────────────────────────────────────────
       levelHUD.update(levelSystem.level, levelSystem.xpFraction, delta);
       weatherHUD.update(weather.currentWeather);
 

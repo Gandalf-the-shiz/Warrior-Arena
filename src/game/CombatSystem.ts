@@ -25,6 +25,9 @@ const HEAVY_HITSTOP = 0.10; // seconds (100ms)
 const LIGHT_HITSTOP = 0.05; // seconds (50ms)
 const FINISHER_HITSTOP = 0.15; // seconds (150ms)
 
+/** Cosine threshold for "frontal" arc — cos(120°) = -0.5, covers 120° arc in front. */
+const FRONTAL_BLOCK_DOT_THRESHOLD = -0.5;
+
 /**
  * Detects melee contacts and applies damage, knockback, hitstop, and VFX.
  *
@@ -207,7 +210,7 @@ export class CombatSystem {
         const toEnemy = enemy.getPosition().clone().sub(playerPos).normalize();
         const forward = player.getForward();
         const dot = forward.dot(toEnemy);
-        if (dot > -0.5) {
+        if (dot > FRONTAL_BLOCK_DOT_THRESHOLD) {
           // Frontal: 70% damage reduction
           damage = Math.round(damage * 0.3);
           vfx.shakeCamera(0.04, 0.06);

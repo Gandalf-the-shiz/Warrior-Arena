@@ -5,6 +5,9 @@ import { PhysicsWorld } from '@/engine/PhysicsWorld';
 // Collision group: membership = bit 2 (enemy), filter = everything except bit 2
 const COMMANDER_COLLISION_GROUPS = (2 << 16) | 0xFFFD;
 
+/** Probability of blocking a hit when in block stance. */
+const BLOCK_CHANCE = 0.30;
+
 enum CommanderAIState {
   IDLE,
   CHASE,
@@ -231,7 +234,7 @@ export class EnemyCommander {
     if (this.isDead || this.invincibilityTimer > 0) return;
 
     // 30% chance to block
-    if (this.isBlockingStance && Math.random() < 0.30) {
+    if (this.isBlockingStance && Math.random() < BLOCK_CHANCE) {
       damage = Math.round(damage * 0.5);
     }
 

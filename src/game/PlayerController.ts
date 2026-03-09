@@ -284,9 +284,9 @@ export class PlayerController {
       }
 
       if (!isAttacking && current !== AnimState.DEATH && current !== AnimState.HIT) {
-        // ── Dash attack: LMB while sprinting (Shift held + moving + attack) ─
-        const isSprinting = (this.input.isDodging()) && isMoving;
-        if (isSprinting && this.attackInputQueued && this.stamina >= DASH_ATTACK_COST) {
+        // ── Dash attack: LMB while pressing shift (isDodging) + moving ──────
+        const wantsDashAttack = (this.input.isDodging()) && isMoving;
+        if (wantsDashAttack && this.attackInputQueued && this.stamina >= DASH_ATTACK_COST) {
           this.attackInputQueued = false;
           this.consumeStamina(DASH_ATTACK_COST);
           this.anim.setState(AnimState.DASH_ATTACK);

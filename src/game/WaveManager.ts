@@ -261,8 +261,8 @@ export class WaveManager {
     if (r < 0.25) return 'BERSERKER';
     if (r < 0.50) return 'ARMORED';
     if (r < 0.75) return 'SWARM';
-    if (r < 0.90) return 'ELITE';
-    return 'NONE';
+    if (r < 0.88) return 'ELITE';
+    return 'NONE'; // ~12% chance for a clear wave
   }
 
   private startWave(): void {
