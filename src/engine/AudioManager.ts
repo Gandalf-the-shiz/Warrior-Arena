@@ -250,6 +250,71 @@ export class AudioManager {
     osc.stop(t + 2.0);
   }
 
+  /** Short ascending chime — call when a pickup is collected. */
+  playPickup(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    // C5 → E5, 80 ms each
+    const notes = [523.25, 659.25]; // C5, E5
+    let t = ctx.currentTime + 0.01;
+    for (const freq of notes) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.3, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+      osc.connect(g).connect(this.masterGain!);
+      osc.start(t);
+      osc.stop(t + 0.1);
+      t += 0.08;
+    }
+  }
+
+  /** Shimmer sweep — call when a power-up is collected. */
+  playPowerUp(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime + 0.01;
+    const dur = 0.3;
+
+    // Sine sweep 400 Hz → 1200 Hz over 300 ms
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(400, t);
+    osc.frequency.exponentialRampToValueAtTime(1200, t + dur);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.3, t);
+    g.gain.setValueAtTime(0.3, t + dur * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.15);
+
+    // Reverb-like tail via short delay
+    const delay = ctx.createDelay(0.3);
+    delay.delayTime.value = 0.06;
+    const fbGain = ctx.createGain();
+    fbGain.gain.value = 0.35;
+    osc.connect(g).connect(this.masterGain!);
+    osc.connect(delay);
+    delay.connect(fbGain);
+    fbGain.connect(delay);
+    fbGain.connect(this.masterGain!);
+    osc.start(t);
+    osc.stop(t + dur + 0.3);
+  }
+
+  /**
+   * Resume the AudioContext after a user gesture.
+   * Call after the title screen is dismissed.
+   */
+  resume(): void {
+    const ctx = this.ensureStarted();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => { /* ignore — browser may block in some environments */ });
+    }
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private ensureStarted(): AudioContext | null {

@@ -48,7 +48,6 @@ export class VFXManager {
 
   // Sword trail
   private readonly swordTrail: SwordTrail;
-  private trailActive = false;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -140,8 +139,6 @@ export class VFXManager {
    * @param active   True while the player is attacking.
    */
   updateSwordTrail(tipPos: THREE.Vector3, active: boolean): void {
-    this.trailActive = active;
-
     if (active) {
       this.swordTrail.tipHistory.push(tipPos.clone());
       if (this.swordTrail.tipHistory.length > TRAIL_HISTORY) {

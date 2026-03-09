@@ -42,6 +42,8 @@ export class CombatSystem {
    * @param onHitstop  Callback that pauses the game loop for `duration` seconds.
    * @param styleMeter Optional style meter to notify on hits.
    * @param onEnemyHit Optional callback fired whenever the player lands a hit.
+   * @param onHitVFX   Optional callback for spawning damage numbers at hit position.
+   * @param onEnemyKilled Optional callback fired with position when a kill lands.
    */
   update(
     player: PlayerController,
@@ -50,10 +52,12 @@ export class CombatSystem {
     onHitstop: (duration: number) => void,
     styleMeter?: StyleMeter,
     onEnemyHit?: () => void,
+    onHitVFX?: (pos: THREE.Vector3, damage: number, isHeavy: boolean, isFinisher: boolean) => void,
+    onEnemyKilled?: (position: THREE.Vector3) => void,
   ): void {
     if (player.isDead) return;
 
-    this.processPlayerAttacks(player, enemies, vfx, onHitstop, styleMeter, onEnemyHit);
+    this.processPlayerAttacks(player, enemies, vfx, onHitstop, styleMeter, onEnemyHit, onHitVFX, onEnemyKilled);
     this.processEnemyAttacks(player, enemies, vfx, styleMeter);
   }
 
@@ -66,6 +70,8 @@ export class CombatSystem {
     onHitstop: (duration: number) => void,
     styleMeter?: StyleMeter,
     onEnemyHit?: () => void,
+    onHitVFX?: (pos: THREE.Vector3, damage: number, isHeavy: boolean, isFinisher: boolean) => void,
+    onEnemyKilled?: (position: THREE.Vector3) => void,
   ): void {
     const hitInfo = player.getAttackHitInfo();
     const playerAttacking = hitInfo !== null;
@@ -107,20 +113,32 @@ export class CombatSystem {
         knockbackDir.set(hitInfo.forward.x, 0, hitInfo.forward.z).normalize();
       }
 
-      enemy.takeDamage(hitInfo.damage, knockbackDir);
+      const actualDamage = Math.round(hitInfo.damage * player.damageMultiplier);
+      const enemyPosBefore = enemy.getPosition().clone();
+
+      enemy.takeDamage(actualDamage, knockbackDir);
       styleMeter?.registerHit();
       onEnemyHit?.();
+
+      if (enemy.isDead) {
+        onEnemyKilled?.(enemyPosBefore);
+      }
 
       // VFX
       const hitPos = enemy.getPosition().clone().add(new THREE.Vector3(0, 0.5, 0));
       vfx.spawnBlood(hitPos, knockbackDir);
 
       // Camera shake — heavy hit shakes more
-      const isHeavy = hitInfo.damage >= HEAVY_DAMAGE_THRESHOLD;
+      const isHeavy = actualDamage >= HEAVY_DAMAGE_THRESHOLD;
+      const isFinisher = player.anim.currentState === AnimState.ATTACK_LIGHT_3;
       vfx.shakeCamera(
         isHeavy ? HEAVY_SHAKE_INTENSITY : LIGHT_SHAKE_INTENSITY,
         isHeavy ? HEAVY_SHAKE_DURATION  : LIGHT_SHAKE_DURATION,
       );
+
+      // Damage number VFX
+      const damagePos = enemyPosBefore.clone().add(new THREE.Vector3(0, 1.5, 0));
+      onHitVFX?.(damagePos, actualDamage, isHeavy, isFinisher);
 
       // Hitstop — 50 ms for heavy, 30 ms for light
       onHitstop(isHeavy ? HEAVY_HITSTOP : LIGHT_HITSTOP);
