@@ -27,7 +27,7 @@ export class Arena {
     private readonly physics: PhysicsWorld,
   ) {
     this.buildGround();
-    this.buildPillars();
+    this.buildColosseum();
     this.buildLighting();
     this.buildBoundaryWalls();
   }
@@ -46,9 +46,9 @@ export class Arena {
     const RADIUS = 30;
     const geo = new THREE.CylinderGeometry(RADIUS, RADIUS, 0.4, 64);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x2a2822,
-      roughness: 0.95,
-      metalness: 0.05,
+      color: 0xc8a96e, // warm sand
+      roughness: 1.0,
+      metalness: 0.0,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
@@ -60,48 +60,118 @@ export class Arena {
     this.physics.createCuboidCollider(body, RADIUS, 0.2, RADIUS);
   }
 
-  // ── Pillars ──────────────────────────────────────────────────────────────
+  // ── Colosseum ─────────────────────────────────────────────────────────────
 
-  private buildPillars(): void {
-    const pillarMat = new THREE.MeshStandardMaterial({
-      color: 0x3a362e,
-      roughness: 0.9,
-      metalness: 0.05,
+  private buildColosseum(): void {
+    // Warm limestone / sandstone colour shared by all structural surfaces.
+    // DoubleSide ensures every face (inner curved walls, ledge undersides, etc.)
+    // is visible from wherever the camera happens to be.
+    const stoneMat = new THREE.MeshStandardMaterial({
+      color: 0xe0d0b8,
+      roughness: 0.85,
+      metalness: 0.02,
+      side: THREE.DoubleSide,
     });
 
-    const COUNT = 10;
-    const RING_RADIUS = 26;
+    // Slightly brighter tone for the decorative columns at arena level
+    const colMat = new THREE.MeshStandardMaterial({
+      color: 0xf0e0c8,
+      roughness: 0.80,
+      metalness: 0.02,
+    });
 
-    for (let i = 0; i < COUNT; i++) {
-      const angle = (i / COUNT) * Math.PI * 2;
-      const x = Math.cos(angle) * RING_RADIUS;
-      const z = Math.sin(angle) * RING_RADIUS;
+    // ── Transition ring: sand floor edge → perimeter wall ─────────────────
+    // Fills the gap between the sand cylinder (r = 30) and the wall base (r = 32).
+    const transRing = new THREE.Mesh(
+      new THREE.RingGeometry(30, 32, 32),
+      new THREE.MeshStandardMaterial({ color: 0xd4b888, roughness: 1.0, side: THREE.DoubleSide }),
+    );
+    transRing.rotation.x = -Math.PI / 2;
+    transRing.position.set(0, 0, 0);
+    transRing.receiveShadow = true;
+    this.scene.add(transRing);
 
-      // Randomise height and slight tilt for a "ruined" look
-      const height = 3 + Math.random() * 5;
-      const tiltAngle = (Math.random() - 0.5) * 0.12;
-      const tiltAxis = new THREE.Vector3(
-        Math.random() - 0.5,
-        0,
-        Math.random() - 0.5,
-      ).normalize();
+    // ── Tier 1: Vertical arena perimeter wall (r = 32, h = 5) ────────────
+    const wall1 = new THREE.Mesh(
+      new THREE.CylinderGeometry(32, 32, 5, 64, 1, true),
+      stoneMat,
+    );
+    wall1.position.set(0, 2.5, 0);
+    wall1.receiveShadow = true;
+    this.scene.add(wall1);
 
-      const geo = new THREE.CylinderGeometry(0.5, 0.6, height, 8);
-      const mesh = new THREE.Mesh(geo, pillarMat);
-      mesh.position.set(x, height / 2, z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.setRotationFromAxisAngle(tiltAxis, tiltAngle);
-      this.scene.add(mesh);
+    // Flat ledge at top of tier 1 (r 32 → 38, y = 5)
+    const ledge1 = new THREE.Mesh(new THREE.RingGeometry(32, 38, 32), stoneMat);
+    ledge1.rotation.x = -Math.PI / 2;
+    ledge1.position.set(0, 5, 0);
+    ledge1.receiveShadow = true;
+    this.scene.add(ledge1);
 
-      // Upright physics collider (approximation — good enough for gameplay)
-      const body = this.physics.createStaticBody(x, height / 2, z);
-      this.physics.createCylinderCollider(body, height / 2, 0.6);
+    // ── Tier 2: Sloped bleacher seating (r 38 → 52, h = 14) ──────────────
+    // The frustum widens upward so the inner face looks like rising seats.
+    const tier2 = new THREE.Mesh(
+      new THREE.CylinderGeometry(52, 38, 14, 64, 1, true),
+      stoneMat,
+    );
+    tier2.position.set(0, 12, 0); // bottom at y = 5, top at y = 19
+    tier2.receiveShadow = true;
+    this.scene.add(tier2);
 
-      // Attach a torch to every other pillar
-      if (i % 2 === 0) {
-        this.addTorch(x * 0.85, height + 0.5, z * 0.85);
-      }
+    // Flat ledge between tier 2 and tier 3 (r 52 → 58, y = 19)
+    const ledge2 = new THREE.Mesh(new THREE.RingGeometry(52, 58, 32), stoneMat);
+    ledge2.rotation.x = -Math.PI / 2;
+    ledge2.position.set(0, 19, 0);
+    ledge2.receiveShadow = true;
+    this.scene.add(ledge2);
+
+    // ── Tier 3: Upper bleacher seating (r 58 → 70, h = 14) ───────────────
+    const tier3 = new THREE.Mesh(
+      new THREE.CylinderGeometry(70, 58, 14, 64, 1, true),
+      stoneMat,
+    );
+    tier3.position.set(0, 26, 0); // bottom at y = 19, top at y = 33
+    tier3.receiveShadow = true;
+    this.scene.add(tier3);
+
+    // Top rim cap (r 58 → 72, y = 33) — closes off the upper edge
+    const topCap = new THREE.Mesh(new THREE.RingGeometry(58, 72, 32), stoneMat);
+    topCap.rotation.x = -Math.PI / 2;
+    topCap.position.set(0, 33, 0);
+    this.scene.add(topCap);
+
+    // Thin outer parapet wall standing on the top rim
+    const parapet = new THREE.Mesh(
+      new THREE.CylinderGeometry(71, 71, 3, 64, 1, true),
+      stoneMat,
+    );
+    parapet.position.set(0, 34.5, 0);
+    this.scene.add(parapet);
+
+    // ── Decorative columns along the arena perimeter ──────────────────────
+    const COL_COUNT = 24;
+    const COL_RADIUS = 31.5;
+    for (let i = 0; i < COL_COUNT; i++) {
+      const angle = (i / COL_COUNT) * Math.PI * 2;
+      const x = Math.cos(angle) * COL_RADIUS;
+      const z = Math.sin(angle) * COL_RADIUS;
+
+      const col = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.3, 0.4, 5, 8),
+        colMat,
+      );
+      col.position.set(x, 2.5, z);
+      col.castShadow = true;
+      col.receiveShadow = true;
+      this.scene.add(col);
+
+      // Small capital (top block) on each column
+      const cap = new THREE.Mesh(
+        new THREE.BoxGeometry(0.9, 0.35, 0.9),
+        colMat,
+      );
+      cap.position.set(x, 5.18, z);
+      cap.castShadow = true;
+      this.scene.add(cap);
     }
   }
 
@@ -138,26 +208,26 @@ export class Arena {
   // ── Lighting ─────────────────────────────────────────────────────────────
 
   private buildLighting(): void {
-    // Pale moonlight — brighter for better visibility
-    const moon = new THREE.DirectionalLight(0x5577bb, 1.2);
-    moon.position.set(20, 40, 10);
-    moon.castShadow = true;
-    moon.shadow.mapSize.set(2048, 2048);
-    moon.shadow.camera.near = 0.5;
-    moon.shadow.camera.far = 120;
-    moon.shadow.camera.left = -40;
-    moon.shadow.camera.right = 40;
-    moon.shadow.camera.top = 40;
-    moon.shadow.camera.bottom = -40;
-    moon.shadow.bias = -0.001;
-    this.scene.add(moon);
+    // Bright Mediterranean sun — warm, high-angle, strong shadows
+    const sun = new THREE.DirectionalLight(0xfff0c8, 2.5);
+    sun.position.set(40, 70, 20);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 200;
+    sun.shadow.camera.left = -60;
+    sun.shadow.camera.right = 60;
+    sun.shadow.camera.top = 60;
+    sun.shadow.camera.bottom = -60;
+    sun.shadow.bias = -0.001;
+    this.scene.add(sun);
 
-    // Dim warm ambient — hints of volcanic heat deep below
-    const ambient = new THREE.AmbientLight(0x332244, 0.7);
+    // Warm fill light — bounced light from the sandy arena floor
+    const ambient = new THREE.AmbientLight(0xffefd5, 0.9);
     this.scene.add(ambient);
 
-    // Hemisphere light for sky/ground fill — cool sky, warm ground
-    const hemi = new THREE.HemisphereLight(0x334466, 0x220800, 0.4);
+    // Hemisphere light — clear blue sky above, warm sand below
+    const hemi = new THREE.HemisphereLight(0x87ceeb, 0xd4a96e, 1.2);
     this.scene.add(hemi);
   }
 
