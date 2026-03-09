@@ -2,44 +2,44 @@ import * as THREE from 'three';
 
 // ── Shared materials ────────────────────────────────────────────────────────
 const MAT_IRON = new THREE.MeshStandardMaterial({
-  color: 0x2a2a40,
+  color: 0x7080a8, // polished steel blue
   metalness: 0.85,
   roughness: 0.25,
 });
 const MAT_SKIN = new THREE.MeshStandardMaterial({
-  color: 0x2a1f1a,
+  color: 0xc49a6c, // warm tan skin
   roughness: 0.7,
 });
 const MAT_HELMET = new THREE.MeshStandardMaterial({
-  color: 0x2a2a3a,
+  color: 0x6a6a80, // visible steel
   metalness: 0.8,
   roughness: 0.3,
 });
 const MAT_VISOR = new THREE.MeshStandardMaterial({
-  color: 0x331111,
-  emissive: new THREE.Color(0x331111),
-  emissiveIntensity: 1.5,
+  color: 0x881111,
+  emissive: new THREE.Color(0x881111),
+  emissiveIntensity: 2.5,
 });
 const MAT_HORN = new THREE.MeshStandardMaterial({
-  color: 0x3a3020,
+  color: 0x8a7040, // visible bone/ivory
   roughness: 0.6,
 });
 const MAT_PAULDRON = new THREE.MeshStandardMaterial({
-  color: 0x222238,
+  color: 0x5a5a78, // dark steel, visible
   metalness: 0.8,
   roughness: 0.3,
 });
 const MAT_GAUNTLET = new THREE.MeshStandardMaterial({
-  color: 0x151522,
+  color: 0x4a4a68, // dark steel, visible
   metalness: 0.9,
   roughness: 0.2,
 });
 const MAT_BOOT = new THREE.MeshStandardMaterial({
-  color: 0x1a1510,
+  color: 0x5a4a38, // leather brown
   roughness: 0.8,
 });
 const MAT_CAPE = new THREE.MeshStandardMaterial({
-  color: 0x3a0a0a,
+  color: 0x8a1515, // rich crimson red
   side: THREE.DoubleSide,
   transparent: true,
   opacity: 0.88,
@@ -48,8 +48,8 @@ const MAT_BLADE = new THREE.MeshStandardMaterial({
   color: 0x8899aa,
   metalness: 0.95,
   roughness: 0.1,
-  emissive: new THREE.Color(0x4444ff),
-  emissiveIntensity: 0.8,
+  emissive: new THREE.Color(0x6666ff),
+  emissiveIntensity: 1.5,
 });
 const MAT_GROOVE = new THREE.MeshStandardMaterial({
   color: 0x445566,
@@ -57,12 +57,12 @@ const MAT_GROOVE = new THREE.MeshStandardMaterial({
   roughness: 0.15,
 });
 const MAT_CROSSGUARD = new THREE.MeshStandardMaterial({
-  color: 0x2a2020,
+  color: 0x5a4a3a, // bronze
   metalness: 0.7,
   roughness: 0.4,
 });
 const MAT_GRIP = new THREE.MeshStandardMaterial({
-  color: 0x1a1510,
+  color: 0x4a3828, // leather
   roughness: 0.8,
 });
 
@@ -110,11 +110,11 @@ export class WarriorModel {
     this.torsoGroup = new THREE.Group();
     this.torsoGroup.position.set(0, 0.05, 0);
 
-    const torso = mkMesh(new THREE.CapsuleGeometry(0.28, 0.5, 4, 8), MAT_IRON);
+    const torso = mkMesh(new THREE.CapsuleGeometry(0.28, 0.5, 8, 16), MAT_IRON);
     this.torsoGroup.add(torso);
 
     // Pauldrons (shoulder armour — half-spheres)
-    const pauldronGeo = new THREE.SphereGeometry(0.22, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.6);
+    const pauldronGeo = new THREE.SphereGeometry(0.22, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6);
     const pauldronL = mkMesh(pauldronGeo, MAT_PAULDRON);
     pauldronL.position.set(-0.44, 0.35, 0);
     pauldronL.rotation.z = Math.PI / 2;
@@ -130,13 +130,13 @@ export class WarriorModel {
     this.headGroup.position.set(0, 0.72, 0);
 
     // Base head (mostly hidden by helmet)
-    const head = mkMesh(new THREE.SphereGeometry(0.19, 8, 6), MAT_SKIN);
+    const head = mkMesh(new THREE.SphereGeometry(0.19, 12, 10), MAT_SKIN);
     head.scale.set(1, 0.95, 0.95);
     this.headGroup.add(head);
 
     // Helmet dome (open-bottom hemisphere covering most of the head)
     const helmet = mkMesh(
-      new THREE.SphereGeometry(0.215, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62),
+      new THREE.SphereGeometry(0.215, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62),
       MAT_HELMET,
     );
     helmet.position.set(0, 0.02, 0);
@@ -170,11 +170,11 @@ export class WarriorModel {
     this.leftArmGroup = new THREE.Group();
     this.leftArmGroup.position.set(-0.44, 0.28, 0);
 
-    const leftUpper = mkMesh(new THREE.CylinderGeometry(0.08, 0.07, 0.6, 6), MAT_IRON);
+    const leftUpper = mkMesh(new THREE.CylinderGeometry(0.08, 0.07, 0.6, 12), MAT_IRON);
     leftUpper.position.set(0, -0.3, 0);
     this.leftArmGroup.add(leftUpper);
 
-    const leftGauntlet = mkMesh(new THREE.CylinderGeometry(0.1, 0.09, 0.18, 6), MAT_GAUNTLET);
+    const leftGauntlet = mkMesh(new THREE.CylinderGeometry(0.1, 0.09, 0.18, 12), MAT_GAUNTLET);
     leftGauntlet.position.set(0, -0.66, 0);
     this.leftArmGroup.add(leftGauntlet);
 
@@ -184,11 +184,11 @@ export class WarriorModel {
     this.rightArmGroup = new THREE.Group();
     this.rightArmGroup.position.set(0.44, 0.28, 0);
 
-    const rightUpper = mkMesh(new THREE.CylinderGeometry(0.08, 0.07, 0.6, 6), MAT_IRON);
+    const rightUpper = mkMesh(new THREE.CylinderGeometry(0.08, 0.07, 0.6, 12), MAT_IRON);
     rightUpper.position.set(0, -0.3, 0);
     this.rightArmGroup.add(rightUpper);
 
-    const rightGauntlet = mkMesh(new THREE.CylinderGeometry(0.1, 0.09, 0.18, 6), MAT_GAUNTLET);
+    const rightGauntlet = mkMesh(new THREE.CylinderGeometry(0.1, 0.09, 0.18, 12), MAT_GAUNTLET);
     rightGauntlet.position.set(0, -0.66, 0);
     this.rightArmGroup.add(rightGauntlet);
 
@@ -198,7 +198,7 @@ export class WarriorModel {
     this.leftLegGroup = new THREE.Group();
     this.leftLegGroup.position.set(-0.15, -0.22, 0);
 
-    const leftThigh = mkMesh(new THREE.CylinderGeometry(0.11, 0.1, 0.52, 6), MAT_IRON);
+    const leftThigh = mkMesh(new THREE.CylinderGeometry(0.11, 0.1, 0.52, 12), MAT_IRON);
     leftThigh.position.set(0, -0.26, 0);
     this.leftLegGroup.add(leftThigh);
 
@@ -206,11 +206,11 @@ export class WarriorModel {
     leftKnee.position.set(0, -0.52, 0.02);
     this.leftLegGroup.add(leftKnee);
 
-    const leftShin = mkMesh(new THREE.CylinderGeometry(0.09, 0.08, 0.42, 6), MAT_IRON);
+    const leftShin = mkMesh(new THREE.CylinderGeometry(0.09, 0.08, 0.42, 12), MAT_IRON);
     leftShin.position.set(0, -0.72, 0);
     this.leftLegGroup.add(leftShin);
 
-    const leftBoot = mkMesh(new THREE.CylinderGeometry(0.12, 0.11, 0.2, 6), MAT_BOOT);
+    const leftBoot = mkMesh(new THREE.CylinderGeometry(0.12, 0.11, 0.2, 12), MAT_BOOT);
     leftBoot.position.set(0, -0.97, 0);
     this.leftLegGroup.add(leftBoot);
 
@@ -220,7 +220,7 @@ export class WarriorModel {
     this.rightLegGroup = new THREE.Group();
     this.rightLegGroup.position.set(0.15, -0.22, 0);
 
-    const rightThigh = mkMesh(new THREE.CylinderGeometry(0.11, 0.1, 0.52, 6), MAT_IRON);
+    const rightThigh = mkMesh(new THREE.CylinderGeometry(0.11, 0.1, 0.52, 12), MAT_IRON);
     rightThigh.position.set(0, -0.26, 0);
     this.rightLegGroup.add(rightThigh);
 
@@ -228,11 +228,11 @@ export class WarriorModel {
     rightKnee.position.set(0, -0.52, 0.02);
     this.rightLegGroup.add(rightKnee);
 
-    const rightShin = mkMesh(new THREE.CylinderGeometry(0.09, 0.08, 0.42, 6), MAT_IRON);
+    const rightShin = mkMesh(new THREE.CylinderGeometry(0.09, 0.08, 0.42, 12), MAT_IRON);
     rightShin.position.set(0, -0.72, 0);
     this.rightLegGroup.add(rightShin);
 
-    const rightBoot = mkMesh(new THREE.CylinderGeometry(0.12, 0.11, 0.2, 6), MAT_BOOT);
+    const rightBoot = mkMesh(new THREE.CylinderGeometry(0.12, 0.11, 0.2, 12), MAT_BOOT);
     rightBoot.position.set(0, -0.97, 0);
     this.rightLegGroup.add(rightBoot);
 
@@ -276,7 +276,7 @@ export class WarriorModel {
     this.swordGroup.add(crossguard);
 
     // Grip
-    const grip = mkMesh(new THREE.CylinderGeometry(0.035, 0.03, 0.3, 6), MAT_GRIP);
+    const grip = mkMesh(new THREE.CylinderGeometry(0.035, 0.03, 0.3, 10), MAT_GRIP);
     grip.position.set(0, -0.15, 0);
     this.swordGroup.add(grip);
 

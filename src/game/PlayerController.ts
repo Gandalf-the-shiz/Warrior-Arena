@@ -273,6 +273,25 @@ export class PlayerController {
   }
 
   /**
+   * Returns the world-space position of the sword blade tip.
+   * Used by VFXManager to build the sword trail ribbon.
+   */
+  getSwordTipPosition(): THREE.Vector3 {
+    const tip = new THREE.Vector3(0, 1.2, 0);
+    return tip.applyMatrix4(this.warrior.swordGroup.matrixWorld);
+  }
+
+  /** Returns true while any attack animation is active. */
+  isAttackingState(): boolean {
+    return [
+      AnimState.ATTACK_LIGHT_1,
+      AnimState.ATTACK_LIGHT_2,
+      AnimState.ATTACK_LIGHT_3,
+      AnimState.ATTACK_HEAVY,
+    ].includes(this.anim.currentState);
+  }
+
+  /**
    * Returns info about the current attack if in the active damage window,
    * or null if not attacking / not yet in the active window.
    */

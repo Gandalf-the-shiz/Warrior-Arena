@@ -144,6 +144,12 @@ async function main(): Promise<void> {
         styleMeter,
       );
 
+      // Sword trail — sample tip position every frame during attacks
+      vfx.updateSwordTrail(
+        player.getSwordTipPosition(),
+        player.isAttackingState(),
+      );
+
       styleMeter.update(delta);
       vfx.update(delta);
 

@@ -2,13 +2,16 @@ import * as THREE from 'three';
 import { CameraController } from '@/game/CameraController';
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const BLOOD_PARTICLE_COUNT = 30;
+const BLOOD_PARTICLE_COUNT = 60;
 const BLOOD_BURST_POOL = 8;
 const BLOOD_LIFETIME = 0.8; // seconds
 const GRAVITY = 14; // m/s²
 
 const MAX_DECALS = 50;
 const DECAL_LIFETIME = 30; // seconds
+
+// Sword trail
+const TRAIL_HISTORY = 12; // number of tip-position samples kept
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 interface BloodBurst {
@@ -24,13 +27,28 @@ interface BloodDecal {
   active: boolean;
 }
 
+interface SwordTrail {
+  mesh: THREE.Mesh;
+  geo: THREE.BufferGeometry;
+  tipHistory: THREE.Vector3[];
+  mat: THREE.MeshBasicMaterial;
+}
+
 /**
  * Manages all visual effects: blood splatter particles, persistent blood
- * decals on the ground, and camera shake requests.
+ * decals on the ground, sword trail VFX, and camera shake requests.
  */
 export class VFXManager {
   private readonly bloodBursts: BloodBurst[] = [];
   private readonly bloodDecals: BloodDecal[] = [];
+
+  // Screen-edge blood flash overlay
+  private readonly bloodFlashEl: HTMLElement;
+  private bloodFlashOpacity = 0;
+
+  // Sword trail
+  private readonly swordTrail: SwordTrail;
+  private trailActive = false;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -42,6 +60,22 @@ export class VFXManager {
     for (let i = 0; i < MAX_DECALS; i++) {
       this.bloodDecals.push(this.createBloodDecal());
     }
+
+    // Screen-edge blood flash overlay (DOM element)
+    this.bloodFlashEl = document.createElement('div');
+    Object.assign(this.bloodFlashEl.style, {
+      position: 'fixed',
+      inset: '0',
+      pointerEvents: 'none',
+      zIndex: '50',
+      background: 'radial-gradient(ellipse at center, transparent 55%, rgba(160,0,0,0.85) 100%)',
+      opacity: '0',
+      transition: 'opacity 0.05s',
+    });
+    document.body.appendChild(this.bloodFlashEl);
+
+    // Sword trail mesh
+    this.swordTrail = this.createSwordTrail();
   }
 
   /**
@@ -84,6 +118,13 @@ export class VFXManager {
   }
 
   /**
+   * Trigger a brief screen-edge blood flash (for heavy hits on the player).
+   */
+  spawnBloodFlash(): void {
+    this.bloodFlashOpacity = 1.0;
+  }
+
+  /**
    * Trigger a camera shake.
    * @param intensity  Maximum world-unit offset (e.g. 0.08 for light, 0.18 for heavy).
    * @param duration   Decay duration in seconds.
@@ -92,13 +133,89 @@ export class VFXManager {
     this.camera.shake(intensity, duration);
   }
 
+  /**
+   * Feed the sword trail the current world-space tip position.
+   * Call every frame during attack states; the trail auto-fades when inactive.
+   * @param tipPos   World-space position of the blade tip.
+   * @param active   True while the player is attacking.
+   */
+  updateSwordTrail(tipPos: THREE.Vector3, active: boolean): void {
+    this.trailActive = active;
+
+    if (active) {
+      this.swordTrail.tipHistory.push(tipPos.clone());
+      if (this.swordTrail.tipHistory.length > TRAIL_HISTORY) {
+        this.swordTrail.tipHistory.shift();
+      }
+    } else {
+      // Fade the history out when not attacking
+      if (this.swordTrail.tipHistory.length > 0) {
+        this.swordTrail.tipHistory.shift();
+      }
+    }
+
+    this.rebuildTrailMesh();
+  }
+
   /** Called every visual frame. */
   update(delta: number): void {
     this.updateBursts(delta);
     this.updateDecals(delta);
+    this.updateBloodFlash(delta);
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
+
+  private updateBloodFlash(delta: number): void {
+    if (this.bloodFlashOpacity <= 0) return;
+    this.bloodFlashOpacity = Math.max(0, this.bloodFlashOpacity - delta * 3);
+    this.bloodFlashEl.style.opacity = this.bloodFlashOpacity.toFixed(3);
+  }
+
+  private rebuildTrailMesh(): void {
+    const history = this.swordTrail.tipHistory;
+    const geo = this.swordTrail.geo;
+
+    if (history.length < 2) {
+      this.swordTrail.mesh.visible = false;
+      return;
+    }
+
+    this.swordTrail.mesh.visible = true;
+
+    // Build a ribbon: for each consecutive pair of points, emit a quad
+    const quadCount = history.length - 1;
+    const positions = new Float32Array(quadCount * 6 * 3);  // 2 triangles per quad, 3 verts each
+    const halfW = 0.04;
+
+    for (let i = 0; i < quadCount; i++) {
+      const a = history[i]!;
+      const b = history[i + 1]!;
+
+      // Offset each point up/down by halfW to form width
+      const pa1 = new THREE.Vector3(a.x, a.y + halfW, a.z);
+      const pa2 = new THREE.Vector3(a.x, a.y - halfW, a.z);
+      const pb1 = new THREE.Vector3(b.x, b.y + halfW, b.z);
+      const pb2 = new THREE.Vector3(b.x, b.y - halfW, b.z);
+
+      const base = i * 6 * 3;
+      // Triangle 1: pa1, pa2, pb1
+      positions[base + 0]  = pa1.x; positions[base + 1]  = pa1.y; positions[base + 2]  = pa1.z;
+      positions[base + 3]  = pa2.x; positions[base + 4]  = pa2.y; positions[base + 5]  = pa2.z;
+      positions[base + 6]  = pb1.x; positions[base + 7]  = pb1.y; positions[base + 8]  = pb1.z;
+      // Triangle 2: pa2, pb2, pb1
+      positions[base + 9]  = pa2.x; positions[base + 10] = pa2.y; positions[base + 11] = pa2.z;
+      positions[base + 12] = pb2.x; positions[base + 13] = pb2.y; positions[base + 14] = pb2.z;
+      positions[base + 15] = pb1.x; positions[base + 16] = pb1.y; positions[base + 17] = pb1.z;
+    }
+
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.computeBoundingSphere();
+
+    // Fade opacity based on how many samples we have
+    const filled = Math.min(history.length / TRAIL_HISTORY, 1);
+    this.swordTrail.mat.opacity = filled * 0.65;
+  }
 
   private updateBursts(delta: number): void {
     for (const burst of this.bloodBursts) {
@@ -172,7 +289,7 @@ export class VFXManager {
     decal.mesh.position.set(x, 0.01, z);
     decal.mesh.rotation.y = Math.random() * Math.PI * 2;
 
-    const scale = 0.18 + Math.random() * 0.38;
+    const scale = 0.28 + Math.random() * 0.52; // larger decals
     decal.mesh.scale.setScalar(scale);
 
     const mat = decal.mesh.material as THREE.MeshStandardMaterial;
@@ -186,7 +303,7 @@ export class VFXManager {
 
     const mat = new THREE.PointsMaterial({
       color: 0xaa0000,
-      size: 0.07,
+      size: 0.15, // larger particles
       transparent: true,
       opacity: 0,
       depthWrite: false,
@@ -205,7 +322,7 @@ export class VFXManager {
   }
 
   private createBloodDecal(): BloodDecal {
-    const geo = new THREE.CircleGeometry(0.5, 7);
+    const geo = new THREE.CircleGeometry(0.5, 8);
     const mat = new THREE.MeshStandardMaterial({
       color: 0x550000,
       roughness: 1.0,
@@ -220,5 +337,28 @@ export class VFXManager {
     this.scene.add(mesh);
 
     return { mesh, age: 0, active: false };
+  }
+
+  private createSwordTrail(): SwordTrail {
+    const geo = new THREE.BufferGeometry();
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x8888ff, // electric blue matching sword emissive
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    this.scene.add(mesh);
+
+    return {
+      mesh,
+      geo,
+      tipHistory: [],
+      mat,
+    };
   }
 }

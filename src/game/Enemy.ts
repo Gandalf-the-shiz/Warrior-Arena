@@ -36,19 +36,21 @@ const MAT_EYE = new THREE.MeshStandardMaterial({
 
 // ── Ghoul materials ──────────────────────────────────────────────────────────
 const MAT_GHOUL_BODY = new THREE.MeshStandardMaterial({
-  color: 0x6a8a6a,
+  color: 0x80b080, // pale green, visible
   roughness: 0.8,
   metalness: 0.0,
 });
 const MAT_GHOUL_JOINT = new THREE.MeshStandardMaterial({
-  color: 0x4a6a4a,
+  color: 0x60905a, // visible green
   roughness: 0.85,
   metalness: 0.0,
 });
 const MAT_GHOUL_WEAPON = new THREE.MeshStandardMaterial({
-  color: 0x3a5a3a,
+  color: 0x508050, // visible green metal
   roughness: 0.9,
   metalness: 0.1,
+  emissive: new THREE.Color(0x204020),
+  emissiveIntensity: 0.8,
 });
 const MAT_GHOUL_EYE = new THREE.MeshStandardMaterial({
   color: 0x000000,
@@ -59,21 +61,21 @@ const MAT_GHOUL_EYE = new THREE.MeshStandardMaterial({
 
 // ── Brute materials ──────────────────────────────────────────────────────────
 const MAT_BRUTE_BODY = new THREE.MeshStandardMaterial({
-  color: 0x5a2a1a,
+  color: 0xa05030, // rusty red-brown, visible
   roughness: 0.7,
   metalness: 0.15,
 });
 const MAT_BRUTE_JOINT = new THREE.MeshStandardMaterial({
-  color: 0x3a1a0a,
+  color: 0x704020, // visible brown
   roughness: 0.8,
   metalness: 0.1,
 });
 const MAT_BRUTE_WEAPON = new THREE.MeshStandardMaterial({
-  color: 0x2a1a1a,
+  color: 0x604030, // visible dark metal
   roughness: 0.6,
   metalness: 0.5,
-  emissive: new THREE.Color(0x300800),
-  emissiveIntensity: 0.5,
+  emissive: new THREE.Color(0x401808),
+  emissiveIntensity: 0.8,
 });
 const MAT_BRUTE_EYE = new THREE.MeshStandardMaterial({
   color: 0x000000,
@@ -179,6 +181,9 @@ export class Enemy {
   private readonly origEmissiveColors: THREE.Color[] = [];
   private readonly origEmissiveIntensities: number[] = [];
 
+  // Detached limb groups that fade out after dismemberment
+  private readonly detachedLimbs: Array<{ group: THREE.Group; age: number }> = [];
+
   constructor(
     private readonly scene: THREE.Scene,
     physics: PhysicsWorld,
@@ -239,11 +244,11 @@ export class Enemy {
 
     // Ribcage cylinder
     this.torsoGroup.add(this.mkMesh(
-      new THREE.CylinderGeometry(0.13, 0.15, 0.46, 7), matBody,
+      new THREE.CylinderGeometry(0.13, 0.15, 0.46, 12), matBody,
     ));
 
     // Spine connecting ribcage to hips
-    const spine = this.mkMesh(new THREE.CylinderGeometry(0.034, 0.038, 0.5, 5), matBody);
+    const spine = this.mkMesh(new THREE.CylinderGeometry(0.034, 0.038, 0.5, 8), matBody);
     spine.position.set(0, -0.28, 0);
     this.torsoGroup.add(spine);
 
@@ -256,7 +261,7 @@ export class Enemy {
     this.headGroup = new THREE.Group();
     this.headGroup.position.set(0, 0.6, 0);
 
-    const skull = this.mkMesh(new THREE.SphereGeometry(0.15, 8, 6), matBody);
+    const skull = this.mkMesh(new THREE.SphereGeometry(0.15, 10, 8), matBody);
     skull.scale.set(1, 1.08, 0.92);
     this.headGroup.add(skull);
 
@@ -289,15 +294,15 @@ export class Enemy {
     this.leftArmGroup = new THREE.Group();
     this.leftArmGroup.position.set(-0.19, 0.24, 0);
 
-    const lUpper = this.mkMesh(new THREE.CylinderGeometry(0.035, 0.031, 0.36, 5), matBody);
+    const lUpper = this.mkMesh(new THREE.CylinderGeometry(0.035, 0.031, 0.36, 10), matBody);
     lUpper.position.set(0, -0.18, 0);
     this.leftArmGroup.add(lUpper);
 
-    const lElbow = this.mkMesh(new THREE.SphereGeometry(0.042, 5, 4), matJoint);
+    const lElbow = this.mkMesh(new THREE.SphereGeometry(0.042, 8, 6), matJoint);
     lElbow.position.set(0, -0.36, 0);
     this.leftArmGroup.add(lElbow);
 
-    const lLower = this.mkMesh(new THREE.CylinderGeometry(0.027, 0.023, 0.32, 5), matBody);
+    const lLower = this.mkMesh(new THREE.CylinderGeometry(0.027, 0.023, 0.32, 10), matBody);
     lLower.position.set(0, -0.52, 0);
     this.leftArmGroup.add(lLower);
 
@@ -307,15 +312,15 @@ export class Enemy {
     this.rightArmGroup = new THREE.Group();
     this.rightArmGroup.position.set(0.19, 0.24, 0);
 
-    const rUpper = this.mkMesh(new THREE.CylinderGeometry(0.035, 0.031, 0.36, 5), matBody);
+    const rUpper = this.mkMesh(new THREE.CylinderGeometry(0.035, 0.031, 0.36, 10), matBody);
     rUpper.position.set(0, -0.18, 0);
     this.rightArmGroup.add(rUpper);
 
-    const rElbow = this.mkMesh(new THREE.SphereGeometry(0.042, 5, 4), matJoint);
+    const rElbow = this.mkMesh(new THREE.SphereGeometry(0.042, 8, 6), matJoint);
     rElbow.position.set(0, -0.36, 0);
     this.rightArmGroup.add(rElbow);
 
-    const rLower = this.mkMesh(new THREE.CylinderGeometry(0.027, 0.023, 0.32, 5), matBody);
+    const rLower = this.mkMesh(new THREE.CylinderGeometry(0.027, 0.023, 0.32, 10), matBody);
     rLower.position.set(0, -0.52, 0);
     this.rightArmGroup.add(rLower);
 
@@ -331,14 +336,14 @@ export class Enemy {
       const clubHead = this.mkMesh(new THREE.BoxGeometry(0.11, 0.9, 0.09), matWeapon);
       clubHead.position.set(0, 0.45, 0);
       this.weaponGroup.add(clubHead);
-      const clubHandle = this.mkMesh(new THREE.CylinderGeometry(0.035, 0.03, 0.36, 5), matJoint);
+      const clubHandle = this.mkMesh(new THREE.CylinderGeometry(0.035, 0.03, 0.36, 8), matJoint);
       clubHandle.position.set(0, -0.01, 0);
       this.weaponGroup.add(clubHandle);
     } else {
       const clubHead = this.mkMesh(new THREE.BoxGeometry(0.068, 0.7, 0.057), matWeapon);
       clubHead.position.set(0, 0.35, 0);
       this.weaponGroup.add(clubHead);
-      const clubHandle = this.mkMesh(new THREE.CylinderGeometry(0.024, 0.02, 0.28, 5), matJoint);
+      const clubHandle = this.mkMesh(new THREE.CylinderGeometry(0.024, 0.02, 0.28, 8), matJoint);
       clubHandle.position.set(0, -0.01, 0);
       this.weaponGroup.add(clubHandle);
     }
@@ -348,15 +353,15 @@ export class Enemy {
     this.leftLegGroup = new THREE.Group();
     this.leftLegGroup.position.set(-0.1, -0.2, 0);
 
-    const ltThigh = this.mkMesh(new THREE.CylinderGeometry(0.046, 0.042, 0.38, 5), matBody);
+    const ltThigh = this.mkMesh(new THREE.CylinderGeometry(0.046, 0.042, 0.38, 10), matBody);
     ltThigh.position.set(0, -0.19, 0);
     this.leftLegGroup.add(ltThigh);
 
-    const ltKnee = this.mkMesh(new THREE.SphereGeometry(0.054, 5, 4), matJoint);
+    const ltKnee = this.mkMesh(new THREE.SphereGeometry(0.054, 8, 6), matJoint);
     ltKnee.position.set(0, -0.38, 0);
     this.leftLegGroup.add(ltKnee);
 
-    const ltShin = this.mkMesh(new THREE.CylinderGeometry(0.036, 0.032, 0.34, 5), matBody);
+    const ltShin = this.mkMesh(new THREE.CylinderGeometry(0.036, 0.032, 0.34, 10), matBody);
     ltShin.position.set(0, -0.55, 0);
     this.leftLegGroup.add(ltShin);
 
@@ -366,15 +371,15 @@ export class Enemy {
     this.rightLegGroup = new THREE.Group();
     this.rightLegGroup.position.set(0.1, -0.2, 0);
 
-    const rtThigh = this.mkMesh(new THREE.CylinderGeometry(0.046, 0.042, 0.38, 5), matBody);
+    const rtThigh = this.mkMesh(new THREE.CylinderGeometry(0.046, 0.042, 0.38, 10), matBody);
     rtThigh.position.set(0, -0.19, 0);
     this.rightLegGroup.add(rtThigh);
 
-    const rtKnee = this.mkMesh(new THREE.SphereGeometry(0.054, 5, 4), matJoint);
+    const rtKnee = this.mkMesh(new THREE.SphereGeometry(0.054, 8, 6), matJoint);
     rtKnee.position.set(0, -0.38, 0);
     this.rightLegGroup.add(rtKnee);
 
-    const rtShin = this.mkMesh(new THREE.CylinderGeometry(0.036, 0.032, 0.34, 5), matBody);
+    const rtShin = this.mkMesh(new THREE.CylinderGeometry(0.036, 0.032, 0.34, 10), matBody);
     rtShin.position.set(0, -0.55, 0);
     this.rightLegGroup.add(rtShin);
 
@@ -601,6 +606,24 @@ export class Enemy {
         break;
     }
 
+    // Tick detached limb fade-out
+    for (let i = this.detachedLimbs.length - 1; i >= 0; i--) {
+      const limb = this.detachedLimbs[i]!;
+      limb.age += delta;
+      const t = Math.min(limb.age / 4.0, 1);
+      limb.group.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          const mat = child.material as THREE.MeshStandardMaterial;
+          mat.transparent = true;
+          mat.opacity = 1 - t;
+        }
+      });
+      if (limb.age >= 4.0) {
+        this.scene.remove(limb.group);
+        this.detachedLimbs.splice(i, 1);
+      }
+    }
+
     // Hit-flash decay
     if (this.hitFlashTimer > 0) {
       this.hitFlashTimer -= delta;
@@ -614,6 +637,10 @@ export class Enemy {
   dispose(physics: PhysicsWorld): void {
     this.headGroup.remove(this.headLight);
     this.scene.remove(this.group);
+    // Clean up any still-fading detached limbs
+    for (const limb of this.detachedLimbs) {
+      this.scene.remove(limb.group);
+    }
     physics.world.removeRigidBody(this.body);
   }
 
@@ -624,6 +651,45 @@ export class Enemy {
     this.stateTimer = 0;
     const vel = this.body.linvel();
     this.body.setLinvel({ x: vel.x * 0.3, y: vel.y, z: vel.z * 0.3 }, true);
+    this.dismember();
+  }
+
+  /**
+   * Randomly detach 1–2 limb groups for a gore-y death effect.
+   * The detached limbs are re-parented to the scene at world position
+   * and fade out over ~4 seconds.
+   */
+  private dismember(): void {
+    // Candidate limb groups: head has highest priority
+    const candidates: Array<{ group: THREE.Group; parent: THREE.Group }> = [
+      { group: this.headGroup,     parent: this.torsoGroup },
+      { group: this.leftArmGroup,  parent: this.torsoGroup },
+      { group: this.rightArmGroup, parent: this.torsoGroup },
+      { group: this.leftLegGroup,  parent: this.torsoGroup },
+      { group: this.rightLegGroup, parent: this.torsoGroup },
+    ];
+
+    // Always detach 1–2 limbs; bias toward head being first pick
+    const detachCount = 1 + Math.floor(Math.random() * 2);
+    for (let n = 0; n < detachCount && candidates.length > 0; n++) {
+      // Index 0 (head) gets double the weight on first pick
+      const idx = n === 0 && Math.random() < 0.5 ? 0 : Math.floor(Math.random() * candidates.length);
+      const { group, parent } = candidates.splice(idx, 1)[0]!;
+
+      // Convert local position to world space before re-parenting
+      const worldPos = new THREE.Vector3();
+      group.getWorldPosition(worldPos);
+      const worldQuat = new THREE.Quaternion();
+      group.getWorldQuaternion(worldQuat);
+
+      parent.remove(group);
+
+      group.position.copy(worldPos);
+      group.quaternion.copy(worldQuat);
+      this.scene.add(group);
+
+      this.detachedLimbs.push({ group, age: 0 });
+    }
   }
 
   private pickWanderTarget(): void {
