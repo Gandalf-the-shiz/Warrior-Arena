@@ -12,6 +12,12 @@ import { VFXManager } from '@/game/VFXManager';
 import { StyleMeter } from '@/game/StyleMeter';
 import { HUD } from '@/ui/HUD';
 import { AudioManager } from '@/engine/AudioManager';
+import { TitleScreen } from '@/ui/TitleScreen';
+import { GameOverScreen } from '@/ui/GameOverScreen';
+import { Minimap } from '@/ui/Minimap';
+import { EnemyHealthBars } from '@/ui/EnemyHealthBars';
+import { LootSystem } from '@/game/LootSystem';
+import { DamageNumbers } from '@/ui/DamageNumbers';
 
 // ── Loading / error overlay helpers ───────────────────────────────────────
 function showLoading(): HTMLElement {
@@ -62,6 +68,9 @@ function showError(message: string): void {
 async function main(): Promise<void> {
   const loading = showLoading();
 
+  // ── Seconds after player death before the game-over overlay appears ────
+  const GAME_OVER_DELAY = 2.0;
+
   // ── Initialise Rapier WASM ─────────────────────────────────────────────
   try {
     await RAPIER.init();
@@ -96,6 +105,14 @@ async function main(): Promise<void> {
   const styleMeter = new StyleMeter();
   const audio = new AudioManager();
 
+  // ── New gameplay / UI systems ──────────────────────────────────────────
+  const titleScreen    = new TitleScreen();
+  const gameOverScreen = new GameOverScreen();
+  const minimap        = new Minimap();
+  const enemyHealthBars = new EnemyHealthBars(renderer.camera);
+  const loot           = new LootSystem(renderer.scene, audio);
+  const damageNumbers  = new DamageNumbers(renderer.camera);
+
   // ── Pre-warm physics so player settles on the ground before first render
   for (let i = 0; i < 30; i++) {
     physics.step();
@@ -113,6 +130,10 @@ async function main(): Promise<void> {
   hud.updateWave(1);
   hud.updateKills(0);
 
+  // ── Await user gesture on title screen, then start audio ──────────────
+  await titleScreen.waitForStart();
+  audio.resume();
+
   let elapsed = 0;
 
   // Hitstop: when > 0 the game freezes (camera and rendering still run)
@@ -125,6 +146,10 @@ async function main(): Promise<void> {
   let prevPlayerDead = false;
   let prevWave = waves.currentWave;
   let prevEnemyCount = waves.enemies.length;
+
+  // ── Game-over tracking ─────────────────────────────────────────────────
+  let gameOverTimer = 0;
+  let gameOverShown = false;
 
   // ── Game loop ──────────────────────────────────────────────────────────
   const loop = new GameLoop(
@@ -193,6 +218,10 @@ async function main(): Promise<void> {
         (duration) => { hitstopRemaining = Math.max(hitstopRemaining, duration); },
         styleMeter,
         () => { audio.playHit(); },
+        (pos, damage, isHeavy, isFinisher) => {
+          damageNumbers.spawn(pos, damage, isHeavy, isFinisher, styleMeter.rank);
+        },
+        (pos) => { loot.spawnDrop(pos); },
       );
 
       // Sword trail — sample tip position every frame during attacks
@@ -203,6 +232,24 @@ async function main(): Promise<void> {
 
       styleMeter.update(delta);
       vfx.update(delta);
+
+      // ── New system updates ─────────────────────────────────────────────
+      minimap.update(player.getPosition(), player.getFacingYaw(), waves.enemies);
+      enemyHealthBars.update(waves.enemies);
+      loot.update(delta, player);
+      damageNumbers.update(delta);
+
+      // Track best style rank for game-over screen
+      gameOverScreen.updateBestRank(styleMeter.rank);
+
+      // Game-over: wait GAME_OVER_DELAY s after death, then show overlay
+      if (player.isDead && !gameOverShown) {
+        gameOverTimer += delta;
+        if (gameOverTimer >= GAME_OVER_DELAY) {
+          gameOverShown = true;
+          gameOverScreen.show(waves.currentWave, waves.totalKills);
+        }
+      }
 
       // Sync HUD every frame
       hud.updateHealth(player.hp, player.maxHp);

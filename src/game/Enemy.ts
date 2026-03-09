@@ -138,6 +138,9 @@ export class Enemy {
   readonly maxHp: number;
   isDead = false;
 
+  /** Enemy type — used by minimap and other UI systems. */
+  readonly type: EnemyType;
+
   /** Damage dealt per swing to the player. */
   readonly attackDamage: number;
   /** Knockback multiplier — higher = flies further on hit. */
@@ -193,6 +196,8 @@ export class Enemy {
   ) {
     this.spawnX = spawnX;
     this.spawnZ = spawnZ;
+
+    this.type = enemyType;
 
     const stats = TYPE_STATS[enemyType];
     this.attackDamage       = stats.damage;

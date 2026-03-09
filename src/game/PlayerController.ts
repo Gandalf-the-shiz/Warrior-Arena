@@ -54,6 +54,10 @@ export class PlayerController {
   readonly maxHp = 100;
   isDead = false;
 
+  /** Damage multiplier applied to all attacks (set by loot system). */
+  damageMultiplier = 1.0;
+  private damageBoostTimer = 0;
+
   // ── Stamina ───────────────────────────────────────────────────────────────
   stamina = MAX_STAMINA;
   readonly maxStamina = MAX_STAMINA;
@@ -120,6 +124,15 @@ export class PlayerController {
       this.staminaRegenPauseTimer -= FIXED_DT;
     } else {
       this.stamina = Math.min(this.maxStamina, this.stamina + STAMINA_REGEN_RATE * FIXED_DT);
+    }
+
+    // ── Damage boost countdown ────────────────────────────────────────────
+    if (this.damageBoostTimer > 0) {
+      this.damageBoostTimer -= FIXED_DT;
+      if (this.damageBoostTimer <= 0) {
+        this.damageBoostTimer = 0;
+        this.damageMultiplier = 1.0;
+      }
     }
 
     // ── Invincibility window countdown ───────────────────────────────────
@@ -356,6 +369,15 @@ export class PlayerController {
     } else {
       this.anim.setState(AnimState.HIT);
     }
+  }
+
+  /**
+   * Apply a temporary damage boost (multiplier) for the given duration in seconds.
+   * Stacks by extending duration and taking the higher multiplier.
+   */
+  addDamageBoost(multiplier: number, duration: number): void {
+    this.damageMultiplier = Math.max(this.damageMultiplier, multiplier);
+    this.damageBoostTimer = Math.max(this.damageBoostTimer, duration);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
