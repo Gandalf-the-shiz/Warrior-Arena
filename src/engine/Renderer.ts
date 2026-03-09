@@ -23,16 +23,16 @@ export class Renderer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Colour grading — dark cinematic look
+    // Colour grading — bright daylight look
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.3;
+    this.renderer.toneMappingExposure = 1.0;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     // ── Scene ───────────────────────────────────────────────────────────────
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0a0a14);
-    // Exponential fog creates the Nordic hellscape atmosphere
-    this.scene.fog = new THREE.FogExp2(0x0f0f18, 0.015);
+    this.scene.background = new THREE.Color(0x87ceeb); // clear Mediterranean sky
+    // Subtle distance haze — matches sky colour so far objects fade naturally
+    this.scene.fog = new THREE.FogExp2(0x9ecfe8, 0.004);
 
     // ── Camera ──────────────────────────────────────────────────────────────
     this.camera = new THREE.PerspectiveCamera(
