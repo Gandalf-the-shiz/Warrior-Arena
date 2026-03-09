@@ -1,4 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat';
+import * as THREE from 'three';
 import { Renderer } from '@/engine/Renderer';
 import { PhysicsWorld } from '@/engine/PhysicsWorld';
 import { InputManager } from '@/engine/InputManager';
@@ -33,6 +34,11 @@ import { WeatherSystem } from '@/game/WeatherSystem';
 import { FinisherSystem } from '@/game/FinisherSystem';
 import { BossHealthBar } from '@/ui/BossHealthBar';
 import type { BossEnemy } from '@/game/BossEnemy';
+// ── Phase 4 imports ──────────────────────────────────────────────────────
+import { LevelSystem } from '@/game/LevelSystem';
+import type { EnemyXPType } from '@/game/LevelSystem';
+import { LevelHUD } from '@/ui/LevelHUD';
+import { WeatherHUD } from '@/ui/WeatherHUD';
 
 // ── Loading / error overlay helpers ───────────────────────────────────────
 function showLoading(): HTMLElement {
@@ -144,6 +150,11 @@ async function main(): Promise<void> {
   const finisher    = new FinisherSystem(audio, vfx, camera);
   const bossHealthBar = new BossHealthBar();
 
+  // ── Phase 4 systems ────────────────────────────────────────────────────
+  const levelSystem = new LevelSystem();
+  const levelHUD    = new LevelHUD();
+  const weatherHUD  = new WeatherHUD();
+
   // Wire SkillSystem into PlayerController
   player.skillSystem = skillSystem;
 
@@ -156,6 +167,23 @@ async function main(): Promise<void> {
     activeBoss = boss;
     bossHealthBar.show();
     audio.playBossRoar();
+  };
+
+  // Level-up effects
+  levelSystem.onLevelUp = (newLevel) => {
+    audio.playLevelUp();
+    levelHUD.onLevelUp();
+    // Golden particle burst + screen flash
+    vfx.spawnGroundSlam(player.getPosition());
+    screenEffects.flashHeal();
+    // Apply stat bonuses to player
+    const hpBonus = levelSystem.getMaxHpBonus();
+    const staminaBonus = levelSystem.getMaxStaminaBonus();
+    // Update player stats dynamically
+    (player as unknown as Record<string, number>)['maxHp'] = 100 + hpBonus;
+    player.hp = Math.min(player.hp + 10, 100 + hpBonus);
+    (player as unknown as Record<string, number>)['maxStamina'] = 100 + staminaBonus;
+    void newLevel;
   };
 
   // Wire wave-cleared → skill picker → next wave
@@ -174,6 +202,18 @@ async function main(): Promise<void> {
       waves.startNextWave();
     });
   };
+
+  // Rest period callback
+  waves.onRestPeriod = () => {
+    // Spawn health orb and stamina crystal at arena center
+    loot.spawnDrop(new THREE.Vector3(0, 1, 0));
+    loot.spawnDrop(new THREE.Vector3(1, 1, 1));
+    // Regen 30% HP
+    player.hp = Math.min(player.hp + Math.round(player.maxHp * 0.3), player.maxHp);
+  };
+
+  // Kill streak tracking for audio
+  let killStreakCount = 0;
 
   // Show best scores on title screen
   titleScreen.showBestScores(scoreManager.getBest());
@@ -354,8 +394,16 @@ async function main(): Promise<void> {
           if (skillSystem.hasSoulHarvest()) {
             player.hp = Math.min(player.hp + 10, player.maxHp);
           }
+          // XP for killing a regular enemy (type determined by current wave composition)
+          // Use SKELETON as default; WaveManager gives us the type via enemies list
+          levelSystem.addXP('SKELETON' as EnemyXPType, styleMeter.rank);
+          killStreakCount++;
+          vfx.onKill(player.getPosition());
+          if (killStreakCount === 5) { audio.playKillStreak5(); }
+          else if (killStreakCount === 10) { audio.playKillStreak10(); }
         },
         waves.activeBoss,
+        waves.commanders,
       );
 
       // Sword trail — sample tip position every frame during attacks
@@ -365,7 +413,7 @@ async function main(): Promise<void> {
       );
 
       styleMeter.update(gameDelta);
-      vfx.update(gameDelta);
+      vfx.update(gameDelta, player.getPosition());
 
       // ── Phase 2 system updates ─────────────────────────────────────────
       waveAnnouncer.update(delta);
@@ -412,6 +460,22 @@ async function main(): Promise<void> {
       enemyHealthBars.update(waves.enemies);
       loot.update(gameDelta, player);
       damageNumbers.update(delta);
+
+      // ── Phase 4 updates ────────────────────────────────────────────────
+      levelHUD.update(levelSystem.level, levelSystem.xpFraction, delta);
+      weatherHUD.update(weather.currentWeather);
+
+      // Kill streak reset when player takes damage
+      if (player.hp < prevPlayerHp) {
+        killStreakCount = 0;
+        vfx.resetKillStreak();
+      }
+
+      // Footstep sounds during run animation
+      if (player.anim.currentState === 'RUN' && !player.isDead) {
+        // Throttle to avoid too frequent calls (already throttled by dust timer internally)
+        if (Math.random() < 0.012) audio.playFootstep();
+      }
 
       // Track best style rank for game-over screen and score saving
       gameOverScreen.updateBestRank(styleMeter.rank);

@@ -685,6 +685,166 @@ export class AudioManager {
 
   // ── Phase 3 sound effects end ─────────────────────────────────────────────
 
+  // ── Phase 4 sound effects ─────────────────────────────────────────────────
+
+  /** Dull metallic thud — block absorbing a hit. */
+  playBlock(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    this.metalClang(ctx, [180, 240, 320], 0.35, 0.25);
+    this.shortNoiseBurst(ctx, 300, 4, 0.15, 0.06);
+  }
+
+  /** Sharp metallic ring with reverb — perfect parry. */
+  playPerfectParry(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    // Bright high-frequency clang
+    this.metalClang(ctx, [880, 1100, 1320, 1760], 0.5, 0.8);
+    // Reverb shimmer (decaying noise)
+    const buf = this.makeNoiseBuffer(ctx, 0.4);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2000;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.15, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    src.connect(hp).connect(g).connect(this.masterGain!);
+    src.start(t);
+    src.stop(t + 0.42);
+  }
+
+  /** Heavy impact — shield bash connecting. */
+  playShieldBash(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    this.metalClang(ctx, [200, 280, 400], 0.55, 0.3);
+    this.shortNoiseBurst(ctx, 500, 3, 0.3, 0.08);
+  }
+
+  /** Ascending C major arpeggio — level up! */
+  playLevelUp(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    // C4=261.63, E4=329.63, G4=392, C5=523.25
+    const notes = [261.63, 329.63, 392.0, 523.25];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const g = ctx.createGain();
+      const start = t + i * 0.1;
+      g.gain.setValueAtTime(0, start);
+      g.gain.linearRampToValueAtTime(0.3, start + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.4);
+      osc.connect(g).connect(this.masterGain!);
+      osc.start(start);
+      osc.stop(start + 0.42);
+
+      // Slight harmonic overlay
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'triangle';
+      osc2.frequency.value = freq * 2;
+      const g2 = ctx.createGain();
+      g2.gain.setValueAtTime(0, start);
+      g2.gain.linearRampToValueAtTime(0.08, start + 0.03);
+      g2.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+      osc2.connect(g2).connect(this.masterGain!);
+      osc2.start(start);
+      osc2.stop(start + 0.37);
+    });
+  }
+
+  /** Power-up chime at 5-kill streak. */
+  playKillStreak5(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const notes = [440, 554.37, 659.25]; // A4, C#5, E5
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const g = ctx.createGain();
+      const start = t + i * 0.08;
+      g.gain.setValueAtTime(0.18, start);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.3);
+      osc.connect(g).connect(this.masterGain!);
+      osc.start(start);
+      osc.stop(start + 0.32);
+    });
+  }
+
+  /** War horn — 10-kill streak. */
+  playKillStreak10(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const notes = [110, 146.83, 196, 220]; // A2 ascending war horn
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, t + i * 0.15);
+      osc.frequency.linearRampToValueAtTime(freq * 1.05, t + i * 0.15 + 0.1);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1200;
+      const g = ctx.createGain();
+      const start = t + i * 0.15;
+      g.gain.setValueAtTime(0.22, start);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+      osc.connect(lp).connect(g).connect(this.masterGain!);
+      osc.start(start);
+      osc.stop(start + 0.55);
+    });
+  }
+
+  /** Short filtered noise burst footstep — vary pitch randomly ±20%. */
+  playFootstep(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const pitchVariance = 0.8 + Math.random() * 0.4;
+    this.shortNoiseBurst(ctx, 200 * pitchVariance, 3, 0.04, 0.04);
+  }
+
+  /** War drum + horn blast — Commander rally. */
+  playCommanderRally(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    // War drum
+    const kick = ctx.createOscillator();
+    kick.type = 'sine';
+    kick.frequency.setValueAtTime(120, t);
+    kick.frequency.exponentialRampToValueAtTime(40, t + 0.1);
+    const kg = ctx.createGain();
+    kg.gain.setValueAtTime(0.5, t);
+    kg.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    kick.connect(kg).connect(this.masterGain!);
+    kick.start(t);
+    kick.stop(t + 0.4);
+
+    // Horn blast (two hits)
+    [0.1, 0.35].forEach((offset) => {
+      const horn = ctx.createOscillator();
+      horn.type = 'sawtooth';
+      horn.frequency.value = 146.83;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 800;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.25, t + offset);
+      g.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.35);
+      horn.connect(lp).connect(g).connect(this.masterGain!);
+      horn.start(t + offset);
+      horn.stop(t + offset + 0.38);
+    });
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private ensureStarted(): AudioContext | null {

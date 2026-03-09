@@ -185,18 +185,18 @@ export class Enemy {
   readonly group: THREE.Group;
 
   hp: number;
-  readonly maxHp: number;
+  maxHp: number; // mutable for modifier scaling
   isDead = false;
 
   /** Enemy type — used by minimap and other UI systems. */
   readonly type: EnemyType;
 
   /** Damage dealt per swing to the player. */
-  readonly attackDamage: number;
+  attackDamage: number; // mutable for ELITE modifier
   /** Knockback multiplier — higher = flies further on hit. */
   readonly knockbackResistance: number;
   /** Move speed used in AGGRO state. */
-  private readonly moveSpeed: number;
+  private moveSpeed: number; // mutable for modifier
   /** Windup time before a strike. */
   private readonly windupTime: number;
   /** Attack cooldown base (seconds between swings). */
@@ -532,6 +532,22 @@ export class Enemy {
   getPosition(): THREE.Vector3 {
     const p = this.body.translation();
     return new THREE.Vector3(p.x, p.y, p.z);
+  }
+
+  /**
+   * Apply a wave modifier to this enemy's stats.
+   * @param speedMult   Multiplier for move speed.
+   * @param hpMult      Multiplier for max HP (also heals to new max).
+   * @param scaleMult   Optional visual scale multiplier.
+   */
+  applyModifier(speedMult: number, hpMult: number, scaleMult = 1.0): void {
+    this.moveSpeed *= speedMult;
+    this.maxHp = Math.round(this.maxHp * hpMult);
+    this.hp = this.maxHp;
+    if (scaleMult !== 1.0) {
+      const cur = this.group.scale.x;
+      this.group.scale.setScalar(cur * scaleMult);
+    }
   }
 
   /**

@@ -3,6 +3,7 @@ import { AnimState } from '@/game/AnimationStateMachine';
 import { PlayerController } from '@/game/PlayerController';
 import { Enemy } from '@/game/Enemy';
 import { BossEnemy } from '@/game/BossEnemy';
+import { EnemyCommander } from '@/game/EnemyCommander';
 import { VFXManager } from '@/game/VFXManager';
 import { StyleMeter } from '@/game/StyleMeter';
 
@@ -60,6 +61,7 @@ export class CombatSystem {
     onHitVFX?: (pos: THREE.Vector3, damage: number, isHeavy: boolean, isFinisher: boolean) => void,
     onEnemyKilled?: (position: THREE.Vector3) => void,
     boss?: BossEnemy | null,
+    commanders?: readonly EnemyCommander[],
   ): void {
     if (player.isDead) return;
 
@@ -71,6 +73,11 @@ export class CombatSystem {
     if (boss && !boss.isDead) {
       this.processBossPlayerAttacks(player, boss, vfx, onHitstop, styleMeter, onEnemyHit, onHitVFX, onEnemyKilled);
       this.processBossAttack(player, boss, vfx, styleMeter);
+    }
+
+    // Commander combat
+    if (commanders && commanders.length > 0) {
+      this.processCommanderCombat(player, commanders, vfx, onHitstop, styleMeter, onEnemyHit, onHitVFX, onEnemyKilled);
     }
   }
 
@@ -142,7 +149,7 @@ export class CombatSystem {
       vfx.spawnBlood(hitPos, knockbackDir);
 
       // Hit flash — enemy turns white for one frame
-      vfx.spawnHitFlash(enemy.mesh);
+      vfx.spawnHitFlash(enemy.group);
 
       // Hit sparks
       vfx.spawnHitSparks(hitPos, knockbackDir);
@@ -324,6 +331,66 @@ export class CombatSystem {
         if (!player.isDead) {
           vfx.shakeCamera(0.3, 0.5);
           vfx.spawnBloodFlash();
+        }
+      }
+    }
+  }
+
+  /** Process player attacks on commanders and commander melee attacks on player. */
+  private processCommanderCombat(
+    player: PlayerController,
+    commanders: readonly EnemyCommander[],
+    vfx: VFXManager,
+    onHitstop: (duration: number) => void,
+    styleMeter?: StyleMeter,
+    onEnemyHit?: () => void,
+    onHitVFX?: (pos: THREE.Vector3, damage: number, isHeavy: boolean, isFinisher: boolean) => void,
+    onEnemyKilled?: (position: THREE.Vector3) => void,
+  ): void {
+    const hitInfo = player.getAttackHitInfo();
+    const playerPos = player.getPosition();
+
+    for (const commander of commanders) {
+      if (commander.isDead) continue;
+
+      // Player → Commander
+      if (hitInfo) {
+        const hitCenter = playerPos.clone().addScaledVector(hitInfo.forward, HIT_RANGE_FORWARD);
+        const dist = commander.getPosition().distanceTo(hitCenter);
+        if (dist <= hitInfo.hitRadius * 1.5 && !this.hitEnemiesThisSwing.has(commander as unknown as Enemy)) {
+          this.hitEnemiesThisSwing.add(commander as unknown as Enemy);
+          const knockbackDir = commander.getPosition().clone().sub(playerPos).normalize();
+          const actualDamage = Math.round(hitInfo.damage * player.getEffectiveDamageMultiplier());
+          const posBefore = commander.getPosition().clone();
+          commander.takeDamage(actualDamage, knockbackDir);
+          styleMeter?.registerHit();
+          onEnemyHit?.();
+          if (commander.isDead) {
+            onEnemyKilled?.(posBefore);
+          }
+          const hitPos = commander.getPosition().clone().add(new THREE.Vector3(0, 0.8, 0));
+          vfx.spawnBlood(hitPos, knockbackDir);
+          vfx.spawnHitFlash(commander.group);
+          vfx.spawnHitSparks(hitPos, knockbackDir);
+          const isHeavy = actualDamage >= HEAVY_DAMAGE_THRESHOLD;
+          const isFinisher = player.anim.currentState === AnimState.ATTACK_LIGHT_3;
+          vfx.shakeCamera(isHeavy ? HEAVY_SHAKE_INTENSITY : LIGHT_SHAKE_INTENSITY, isHeavy ? HEAVY_SHAKE_DURATION : LIGHT_SHAKE_DURATION);
+          onHitVFX?.(posBefore.clone().add(new THREE.Vector3(0, 1.8, 0)), actualDamage, isHeavy, isFinisher);
+          onHitstop(isHeavy ? HEAVY_HITSTOP : LIGHT_HITSTOP);
+        }
+      }
+
+      // Commander → Player
+      if (commander.isInStrikeWindow()) {
+        const dist = commander.getPosition().distanceTo(playerPos);
+        if (dist <= ENEMY_ATTACK_REACH * 1.5) {
+          commander.markDamageDealt();
+          player.takeDamage(commander.attackDamage);
+          if (!player.isDead) {
+            styleMeter?.onPlayerDamage();
+            vfx.shakeCamera(0.14, 0.22);
+            vfx.spawnBloodFlash();
+          }
         }
       }
     }
