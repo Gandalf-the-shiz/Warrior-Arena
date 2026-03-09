@@ -486,7 +486,7 @@ export class BossEnemy {
    * Variable-rate update — mesh sync, AI state transitions, animations.
    * @returns shockwave data if a slam was triggered this frame
    */
-  update(delta: number, playerPos: THREE.Vector3): {
+  update(delta: number, _playerPos: THREE.Vector3): {
     slamTriggered: boolean;
     slamPos: THREE.Vector3;
   } {
@@ -507,7 +507,6 @@ export class BossEnemy {
     this.group.quaternion.slerp(this.targetRotation, 0.08);
 
     const myPos = new THREE.Vector3(pos.x, pos.y, pos.z);
-    const distToPlayer = myPos.distanceTo(playerPos);
 
     switch (this.aiState) {
       case BossAIState.IDLE:
@@ -591,7 +590,6 @@ export class BossEnemy {
       this.visorMat.emissiveIntensity = pulse;
     }
 
-    void distToPlayer;
     return { slamTriggered, slamPos };
   }
 

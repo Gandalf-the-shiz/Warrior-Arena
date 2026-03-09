@@ -1,4 +1,5 @@
 import { SkillSystem, SkillDefinition, RARITY_COLORS, SkillRarity } from '@/game/SkillSystem';
+import type { PlayerController } from '@/game/PlayerController';
 
 /**
  * Between-wave skill selection modal UI.
@@ -70,7 +71,7 @@ export class SkillPicker {
    */
   async show(
     skillSystem: SkillSystem,
-    player: { hp: number; maxHp: number },
+    player: PlayerController,
   ): Promise<void> {
     const skills = SkillSystem.pickRandomSkills(3);
 
@@ -103,7 +104,7 @@ export class SkillPicker {
   private selectSkill(
     skill: SkillDefinition,
     skillSystem: SkillSystem,
-    player: { hp: number; maxHp: number },
+    player: PlayerController,
   ): void {
     skillSystem.applySkill(skill, player);
 

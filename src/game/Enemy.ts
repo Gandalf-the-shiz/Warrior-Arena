@@ -396,7 +396,7 @@ export class Enemy {
 
     const lUpper = this.mkMesh(
       new THREE.CylinderGeometry(0.035, 0.031, 0.36, 10),
-      enemyType === EnemyType.NECROMANCER ? matBody : matBody,
+      matBody,
     );
     lUpper.position.set(0, -0.18, 0);
     this.leftArmGroup.add(lUpper);
