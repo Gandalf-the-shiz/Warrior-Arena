@@ -273,6 +273,15 @@ export class PlayerController {
   }
 
   /**
+   * Returns the player's current facing angle around the Y-axis (radians).
+   * Used by CameraController to lock the camera directly behind the character.
+   */
+  getFacingYaw(): number {
+    const euler = new THREE.Euler().setFromQuaternion(this.mesh.quaternion, 'YXZ');
+    return euler.y;
+  }
+
+  /**
    * Returns the world-space position of the sword blade tip.
    * Used by VFXManager to build the sword trail ribbon.
    */
