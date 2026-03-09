@@ -31,7 +31,7 @@ export class CameraController {
   private static readonly COLLISION_GRACE_FRAMES = 10;
 
   // Over-the-shoulder offset in camera-local space (behind, above, slightly right)
-  private readonly OFFSET = new THREE.Vector3(0.6, 2.5, 4.5);
+  private readonly OFFSET = new THREE.Vector3(0.6, 2.5, -4.5);
 
   constructor(
     private readonly camera: THREE.Camera,
