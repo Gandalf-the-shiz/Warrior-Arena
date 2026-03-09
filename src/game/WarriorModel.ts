@@ -282,8 +282,8 @@ export class WarriorModel {
 
     // ── Greatsword ────────────────────────────────────────────────────────
     this.swordGroup = new THREE.Group();
-    // Position at gauntlet level, slightly forward from hand; flip so blade points DOWN
-    this.swordGroup.position.set(0, -0.66, 0.12);
+    // Position grip at hand (gauntlet) level, slightly forward from arm; flip so blade points DOWN
+    this.swordGroup.position.set(0, -0.81, 0.15);
     this.swordGroup.rotation.set(Math.PI, 0, 0); // blade points down in idle stance
 
     // Blade
