@@ -13,6 +13,11 @@ const DECAL_LIFETIME = 30; // seconds
 // Sword trail
 const TRAIL_HISTORY = 12; // number of tip-position samples kept
 
+// Hit sparks
+const SPARK_COUNT = 10;
+const SPARK_POOL = 6;
+const SPARK_LIFETIME = 0.3;
+
 // ── Interfaces ────────────────────────────────────────────────────────────────
 interface BloodBurst {
   points: THREE.Points;
@@ -34,9 +39,37 @@ interface SwordTrail {
   mat: THREE.MeshBasicMaterial;
 }
 
+interface SparkBurst {
+  points: THREE.Points;
+  velocities: Float32Array;
+  ages: Float32Array;
+  active: boolean;
+}
+
+interface GroundSlam {
+  mesh: THREE.Mesh;
+  age: number;
+  active: boolean;
+}
+
+interface HitFlash {
+  mesh: THREE.Object3D;
+  timer: number;
+  originalMaterials: THREE.Material[];
+}
+
+interface KillStreakAura {
+  points: THREE.Points;
+  velocities: Float32Array;
+  ages: Float32Array;
+  active: boolean;
+  angle: number; // orbit angle
+}
+
 /**
  * Manages all visual effects: blood splatter particles, persistent blood
- * decals on the ground, sword trail VFX, and camera shake requests.
+ * decals on the ground, sword trail VFX, hit sparks, ground slam rings,
+ * dodge afterimages, kill streak aura, and camera shake requests.
  */
 export class VFXManager {
   private readonly bloodBursts: BloodBurst[] = [];
@@ -49,6 +82,24 @@ export class VFXManager {
   // Sword trail
   private readonly swordTrail: SwordTrail;
 
+  // Hit sparks
+  private readonly sparkBursts: SparkBurst[] = [];
+
+  // Ground slam rings
+  private readonly groundSlams: GroundSlam[] = [];
+
+  // Active hit flashes (1-frame white flash on enemies)
+  private readonly hitFlashes: HitFlash[] = [];
+
+  // Kill streak aura (orbiting particles)
+  private killStreak = 0;
+  private killStreakResetTimer = 0;
+  private readonly auraParticles: KillStreakAura[] = [];
+  private auraOrbitAngle = 0;
+
+  // Dodge afterimages
+  private readonly afterimageMeshes: Array<{ box: THREE.Mesh; age: number }> = [];
+
   constructor(
     private readonly scene: THREE.Scene,
     private readonly camera: CameraController,
@@ -58,6 +109,12 @@ export class VFXManager {
     }
     for (let i = 0; i < MAX_DECALS; i++) {
       this.bloodDecals.push(this.createBloodDecal());
+    }
+    for (let i = 0; i < SPARK_POOL; i++) {
+      this.sparkBursts.push(this.createSparkBurst());
+    }
+    for (let i = 0; i < 4; i++) {
+      this.groundSlams.push(this.createGroundSlam());
     }
 
     // Screen-edge blood flash overlay (DOM element)
@@ -75,6 +132,11 @@ export class VFXManager {
 
     // Sword trail mesh
     this.swordTrail = this.createSwordTrail();
+
+    // Kill streak aura pool
+    for (let i = 0; i < 20; i++) {
+      this.auraParticles.push(this.createAuraParticle());
+    }
   }
 
   /**
@@ -154,11 +216,137 @@ export class VFXManager {
     this.rebuildTrailMesh();
   }
 
+  /**
+   * Spawn orange/white metallic spark particles on a hit.
+   */
+  spawnHitSparks(position: THREE.Vector3, direction: THREE.Vector3): void {
+    const burst = this.sparkBursts.find((b) => !b.active);
+    if (!burst) return;
+    burst.active = true;
+    const posAttr = burst.points.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < SPARK_COUNT; i++) {
+      posAttr.setXYZ(i,
+        position.x + (Math.random() - 0.5) * 0.15,
+        position.y + (Math.random() - 0.5) * 0.15,
+        position.z + (Math.random() - 0.5) * 0.15,
+      );
+      const speed = 2.5 + Math.random() * 4.0;
+      burst.velocities[i * 3]!     = direction.x * speed + (Math.random() - 0.5) * 3;
+      burst.velocities[i * 3 + 1]! = Math.random() * 4 + 1;
+      burst.velocities[i * 3 + 2]! = direction.z * speed + (Math.random() - 0.5) * 3;
+      burst.ages[i]! = 0;
+    }
+    posAttr.needsUpdate = true;
+    (burst.points.material as THREE.PointsMaterial).opacity = 1.0;
+  }
+
+  /**
+   * Flash an enemy mesh white for one frame (hit feedback).
+   */
+  spawnHitFlash(mesh: THREE.Object3D): void {
+    const original: THREE.Material[] = [];
+    mesh.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        original.push(child.material as THREE.Material);
+      }
+    });
+    if (original.length === 0) return;
+
+    const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    mesh.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.material = whiteMat;
+      }
+    });
+
+    this.hitFlashes.push({ mesh, timer: 0.06, originalMaterials: original });
+  }
+
+  /**
+   * Spawn an expanding shockwave ring on the ground for heavy attacks.
+   */
+  spawnGroundSlam(position: THREE.Vector3): void {
+    const slam = this.groundSlams.find((s) => !s.active);
+    if (!slam) return;
+    slam.active = true;
+    slam.age = 0;
+    slam.mesh.position.set(position.x, 0.05, position.z);
+    slam.mesh.scale.set(0.1, 0.1, 0.1);
+    slam.mesh.visible = true;
+    (slam.mesh.material as THREE.MeshBasicMaterial).opacity = 0.7;
+  }
+
+  /**
+   * Spawn a brief ghostly afterimage at the player's current position.
+   */
+  spawnDodgeAfterimage(position: THREE.Vector3): void {
+    const geo = new THREE.BoxGeometry(0.5, 1.6, 0.3);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x4488ff,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const box = new THREE.Mesh(geo, mat);
+    box.position.copy(position);
+    this.scene.add(box);
+    this.afterimageMeshes.push({ box, age: 0 });
+  }
+
+  /**
+   * Notify VFX of a kill so kill-streak effects can be managed.
+   * @param playerPos Current player world position (for aura orbit).
+   */
+  onKill(playerPos: THREE.Vector3): void {
+    this.killStreak++;
+    this.killStreakResetTimer = 4.0; // reset if no kills for 4 seconds
+
+    // Activate aura particles proportional to streak
+    const auraCount = this.killStreak >= 10 ? 16 : this.killStreak >= 5 ? 8 : 0;
+    for (let i = 0; i < this.auraParticles.length; i++) {
+      const p = this.auraParticles[i]!;
+      p.active = i < auraCount;
+      if (p.active) {
+        p.angle = (i / auraCount) * Math.PI * 2;
+        const pp = p.points;
+        pp.visible = true;
+        const pos = playerPos.clone().add(new THREE.Vector3(
+          Math.cos(p.angle) * 0.8, 0.5, Math.sin(p.angle) * 0.8,
+        ));
+        (pp.geometry.attributes.position as THREE.BufferAttribute).setXYZ(0, pos.x, pos.y, pos.z);
+        (pp.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+      } else {
+        p.points.visible = false;
+      }
+    }
+  }
+
+  /** Reset kill streak (call when player takes damage or wave ends). */
+  resetKillStreak(): void {
+    this.killStreak = 0;
+    for (const p of this.auraParticles) {
+      p.active = false;
+      p.points.visible = false;
+    }
+  }
+
   /** Called every visual frame. */
-  update(delta: number): void {
+  update(delta: number, playerPos?: THREE.Vector3): void {
     this.updateBursts(delta);
     this.updateDecals(delta);
     this.updateBloodFlash(delta);
+    this.updateSparks(delta);
+    this.updateGroundSlams(delta);
+    this.updateHitFlashes(delta);
+    this.updateAfterimages(delta);
+    if (playerPos) this.updateAura(delta, playerPos);
+
+    // Decay kill streak timer
+    if (this.killStreakResetTimer > 0) {
+      this.killStreakResetTimer -= delta;
+      if (this.killStreakResetTimer <= 0) this.resetKillStreak();
+    }
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
@@ -357,5 +545,166 @@ export class VFXManager {
       tipHistory: [],
       mat,
     };
+  }
+
+  private createSparkBurst(): SparkBurst {
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(SPARK_COUNT * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xffaa22,
+      size: 0.06,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+    const points = new THREE.Points(geo, mat);
+    this.scene.add(points);
+    return {
+      points,
+      velocities: new Float32Array(SPARK_COUNT * 3),
+      ages: new Float32Array(SPARK_COUNT).fill(SPARK_LIFETIME),
+      active: false,
+    };
+  }
+
+  private createGroundSlam(): GroundSlam {
+    const geo = new THREE.RingGeometry(0.1, 0.4, 24);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffaa44,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.visible = false;
+    this.scene.add(mesh);
+    return { mesh, age: 0, active: false };
+  }
+
+  private createAuraParticle(): KillStreakAura {
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(3);
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xff6600,
+      size: 0.12,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+    });
+    const points = new THREE.Points(geo, mat);
+    points.visible = false;
+    this.scene.add(points);
+    return { points, velocities: new Float32Array(3), ages: new Float32Array(1), active: false, angle: 0 };
+  }
+
+  private updateSparks(delta: number): void {
+    for (const burst of this.sparkBursts) {
+      if (!burst.active) continue;
+      const posAttr = burst.points.geometry.attributes.position as THREE.BufferAttribute;
+      let anyAlive = false;
+      for (let i = 0; i < SPARK_COUNT; i++) {
+        burst.ages[i]! += delta;
+        if (burst.ages[i]! >= SPARK_LIFETIME) continue;
+        anyAlive = true;
+        const px = posAttr.getX(i) + burst.velocities[i * 3]! * delta;
+        const py = posAttr.getY(i) + burst.velocities[i * 3 + 1]! * delta;
+        const pz = posAttr.getZ(i) + burst.velocities[i * 3 + 2]! * delta;
+        posAttr.setXYZ(i, px, Math.max(0.05, py), pz);
+        burst.velocities[i * 3 + 1]! -= GRAVITY * delta;
+        burst.velocities[i * 3]! *= 0.9;
+        burst.velocities[i * 3 + 2]! *= 0.9;
+      }
+      posAttr.needsUpdate = true;
+      const mat = burst.points.material as THREE.PointsMaterial;
+      if (!anyAlive) {
+        burst.active = false;
+        mat.opacity = 0;
+      } else {
+        const maxAge = Math.max(...Array.from({ length: SPARK_COUNT }, (_, i) => burst.ages[i]!));
+        mat.opacity = Math.max(0, 1.0 * (1 - maxAge / SPARK_LIFETIME));
+      }
+    }
+  }
+
+  private updateGroundSlams(delta: number): void {
+    const SLAM_DURATION = 0.5;
+    for (const slam of this.groundSlams) {
+      if (!slam.active) continue;
+      slam.age += delta;
+      if (slam.age >= SLAM_DURATION) {
+        slam.active = false;
+        slam.mesh.visible = false;
+        continue;
+      }
+      const t = slam.age / SLAM_DURATION;
+      const scale = 0.1 + t * 6.0;
+      slam.mesh.scale.set(scale, scale, scale);
+      (slam.mesh.material as THREE.MeshBasicMaterial).opacity = 0.7 * (1 - t);
+    }
+  }
+
+  private updateHitFlashes(delta: number): void {
+    for (let i = this.hitFlashes.length - 1; i >= 0; i--) {
+      const hf = this.hitFlashes[i]!;
+      hf.timer -= delta;
+      if (hf.timer <= 0) {
+        // Restore original materials
+        let matIdx = 0;
+        hf.mesh.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.material = hf.originalMaterials[matIdx++] ?? child.material;
+          }
+        });
+        this.hitFlashes.splice(i, 1);
+      }
+    }
+  }
+
+  private updateAfterimages(delta: number): void {
+    const AFTERIMAGE_DURATION = 0.3;
+    for (let i = this.afterimageMeshes.length - 1; i >= 0; i--) {
+      const ai = this.afterimageMeshes[i]!;
+      ai.age += delta;
+      if (ai.age >= AFTERIMAGE_DURATION) {
+        this.scene.remove(ai.box);
+        ai.box.geometry.dispose();
+        this.afterimageMeshes.splice(i, 1);
+      } else {
+        const t = ai.age / AFTERIMAGE_DURATION;
+        (ai.box.material as THREE.MeshBasicMaterial).opacity = 0.45 * (1 - t);
+      }
+    }
+  }
+
+  private updateAura(delta: number, playerPos: THREE.Vector3): void {
+    this.auraOrbitAngle += delta * 2.5;
+    const count = this.auraParticles.filter((p) => p.active).length;
+    if (count === 0) return;
+    let idx = 0;
+    for (const p of this.auraParticles) {
+      if (!p.active) continue;
+      p.angle = this.auraOrbitAngle + (idx / count) * Math.PI * 2;
+      const r = 0.8 + Math.sin(p.angle * 3) * 0.1;
+      const yOff = 0.5 + Math.sin(this.auraOrbitAngle * 2 + idx) * 0.2;
+      const pos = new THREE.Vector3(
+        playerPos.x + Math.cos(p.angle) * r,
+        playerPos.y + yOff,
+        playerPos.z + Math.sin(p.angle) * r,
+      );
+      (p.points.geometry.attributes.position as THREE.BufferAttribute).setXYZ(0, pos.x, pos.y, pos.z);
+      (p.points.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+      const mat = p.points.material as THREE.PointsMaterial;
+      // 10+ streak gets brighter/larger
+      mat.size = this.killStreak >= 10 ? 0.18 : 0.12;
+      mat.color.set(this.killStreak >= 10 ? 0xffff00 : 0xff6600);
+      idx++;
+    }
   }
 }

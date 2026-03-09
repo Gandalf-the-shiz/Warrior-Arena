@@ -187,7 +187,7 @@ async function main(): Promise<void> {
   }
   // Sync visual mesh to settled physics position immediately
   player.update(0);
-  camera.update(player.getPosition(), 0);
+  camera.update(player.getPosition(), 0, player.getFacingYaw());
 
   // Hide loading screen
   loading.remove();
@@ -247,7 +247,7 @@ async function main(): Promise<void> {
       if (hitstopRemaining > 0) {
         hitstopRemaining = Math.max(0, hitstopRemaining - delta);
         // Camera still tracks smoothly during freeze
-        camera.update(player.getPosition(), delta);
+        camera.update(player.getPosition(), delta, player.getFacingYaw());
         return;
       }
 
@@ -272,7 +272,7 @@ async function main(): Promise<void> {
       }
 
       player.update(gameDelta);
-      camera.update(player.getPosition(), delta);
+      camera.update(player.getPosition(), delta, player.getFacingYaw());
       waves.update(gameDelta, player.getPosition());
 
       // ── Phase 3: Finisher system ───────────────────────────────────────

@@ -14,12 +14,15 @@ const ENEMY_ATTACK_REACH = 2.5;
 
 // Impact parameters by attack weight
 const HEAVY_DAMAGE_THRESHOLD = 40;
-const HEAVY_SHAKE_INTENSITY = 0.18;
-const HEAVY_SHAKE_DURATION = 0.18;
-const LIGHT_SHAKE_INTENSITY = 0.09;
-const LIGHT_SHAKE_DURATION = 0.12;
-const HEAVY_HITSTOP = 0.05; // seconds
-const LIGHT_HITSTOP = 0.03; // seconds
+const HEAVY_SHAKE_INTENSITY = 0.12;
+const HEAVY_SHAKE_DURATION = 0.15;
+const LIGHT_SHAKE_INTENSITY = 0.05;
+const LIGHT_SHAKE_DURATION = 0.08;
+const KILL_SHAKE_INTENSITY = 0.08;
+const KILL_SHAKE_DURATION = 0.12;
+const HEAVY_HITSTOP = 0.10; // seconds (100ms)
+const LIGHT_HITSTOP = 0.05; // seconds (50ms)
+const FINISHER_HITSTOP = 0.15; // seconds (150ms)
 
 /**
  * Detects melee contacts and applies damage, knockback, hitstop, and VFX.
@@ -138,20 +141,37 @@ export class CombatSystem {
       const hitPos = enemy.getPosition().clone().add(new THREE.Vector3(0, 0.5, 0));
       vfx.spawnBlood(hitPos, knockbackDir);
 
-      // Camera shake — heavy hit shakes more
+      // Hit flash — enemy turns white for one frame
+      vfx.spawnHitFlash(enemy.mesh);
+
+      // Hit sparks
+      vfx.spawnHitSparks(hitPos, knockbackDir);
+
+      // Camera shake — heavy hit / kill shakes more
       const isHeavy = actualDamage >= HEAVY_DAMAGE_THRESHOLD;
       const isFinisher = player.anim.currentState === AnimState.ATTACK_LIGHT_3;
-      vfx.shakeCamera(
-        isHeavy ? HEAVY_SHAKE_INTENSITY : LIGHT_SHAKE_INTENSITY,
-        isHeavy ? HEAVY_SHAKE_DURATION  : LIGHT_SHAKE_DURATION,
-      );
+
+      if (enemy.isDead) {
+        vfx.shakeCamera(KILL_SHAKE_INTENSITY, KILL_SHAKE_DURATION);
+      } else {
+        vfx.shakeCamera(
+          isHeavy ? HEAVY_SHAKE_INTENSITY : LIGHT_SHAKE_INTENSITY,
+          isHeavy ? HEAVY_SHAKE_DURATION  : LIGHT_SHAKE_DURATION,
+        );
+      }
+
+      // Ground slam ring for heavy attack
+      if (isHeavy) {
+        vfx.spawnGroundSlam(playerPos.clone());
+      }
 
       // Damage number VFX
       const damagePos = enemyPosBefore.clone().add(new THREE.Vector3(0, 1.5, 0));
       onHitVFX?.(damagePos, actualDamage, isHeavy, isFinisher);
 
-      // Hitstop — 50 ms for heavy, 30 ms for light
-      onHitstop(isHeavy ? HEAVY_HITSTOP : LIGHT_HITSTOP);
+      // Hitstop — 150ms finisher, 100ms heavy, 50ms light
+      const hitstopDur = isFinisher ? FINISHER_HITSTOP : isHeavy ? HEAVY_HITSTOP : LIGHT_HITSTOP;
+      onHitstop(hitstopDur);
     }
   }
 
@@ -171,7 +191,27 @@ export class CombatSystem {
       if (dist > ENEMY_ATTACK_REACH) continue;
 
       enemy.markDamageDealt();
-      player.takeDamage(enemy.attackDamage);
+
+      let damage = enemy.attackDamage;
+
+      // ── Block / parry check ──────────────────────────────────────────────
+      if (player.isBlocking) {
+        // Check if hit is frontal (within 120° arc of player facing)
+        const toEnemy = enemy.getPosition().clone().sub(playerPos).normalize();
+        const forward = player.getForward();
+        const dot = forward.dot(toEnemy);
+        if (dot > -0.5) {
+          // Frontal: 70% damage reduction
+          damage = Math.round(damage * 0.3);
+          vfx.shakeCamera(0.04, 0.06);
+        }
+        // Blocked hit doesn't break blocking state or trigger HIT animation
+        player.hp = Math.max(0, player.hp - Math.max(1, damage));
+        if (player.hp <= 0) { player.isDead = true; }
+        continue;
+      }
+
+      player.takeDamage(damage);
 
       if (!player.isDead) {
         styleMeter?.onPlayerDamage();
