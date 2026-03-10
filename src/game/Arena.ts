@@ -38,11 +38,13 @@ export class Arena {
   private readonly emberSystems: TorchEmbers[] = [];
   private dustSystem: DustSystem | null = null;
   private readonly spectatorRows: SpectatorRow[] = [];
+  private skyDomeMaterial: THREE.ShaderMaterial | null = null;
 
   constructor(
     private readonly scene: THREE.Scene,
     private readonly physics: PhysicsWorld,
   ) {
+    this.buildSkyDome();
     this.buildGround();
     this.buildArenaFloorDetails();
     this.buildColosseum();
@@ -53,53 +55,221 @@ export class Arena {
 
   /** Call every frame with elapsed time (seconds) and delta to animate torches and particles. */
   update(time: number, delta = 1 / 60): void {
+    // Torch flicker — noise pattern for ±15% intensity variation
     for (const torch of this.torches) {
-      torch.light.intensity = torch.base + Math.sin(time * torch.speed) * 0.5;
+      const flicker = Math.sin(time * torch.speed) * 0.5 +
+                      Math.sin(time * torch.speed * 2.3 + 1.1) * 0.25 +
+                      Math.sin(time * torch.speed * 0.7 + 2.4) * 0.25;
+      torch.light.intensity = torch.base + flicker * torch.base * 0.15;
+    }
+    // Animate sky dome time uniform
+    if (this.skyDomeMaterial?.uniforms['time']) {
+      this.skyDomeMaterial.uniforms['time'].value = time;
     }
     this.updateEmbers(delta);
     this.updateDust(delta);
     this.updateSpectators(time);
   }
 
+  // ── Sky Dome ────────────────────────────────────────────────────────────
+
+  private buildSkyDome(): void {
+    // Inside-facing sphere for procedural gradient sky
+    const skyGeo = new THREE.SphereGeometry(490, 32, 16);
+    this.skyDomeMaterial = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      uniforms: {
+        time: { value: 0.0 },
+      },
+      vertexShader: /* glsl */`
+        varying vec3 vWorldDir;
+        void main() {
+          vWorldDir = normalize((modelMatrix * vec4(position, 0.0)).xyz);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */`
+        uniform float time;
+        varying vec3 vWorldDir;
+        void main() {
+          vec3 dir = normalize(vWorldDir);
+          float h = clamp(dir.y, 0.0, 1.0);
+
+          // Gradient: warm orange/amber horizon → deep dark blue zenith
+          vec3 horizon = vec3(0.831, 0.584, 0.416); // #d4956a
+          vec3 zenith  = vec3(0.102, 0.102, 0.243); // #1a1a3e
+          vec3 sky = mix(horizon, zenith, smoothstep(0.0, 0.75, h));
+
+          // Horizon glow band — extra warmth just above horizon
+          float glow = smoothstep(0.15, 0.0, h) * 0.4;
+          sky += vec3(0.8, 0.3, 0.05) * glow;
+
+          // Procedural cloud noise using sin/cos wave combinations
+          float nx = dir.x * 4.0 + time * 0.018;
+          float nz = dir.z * 4.0 + time * 0.012;
+          float cloud  = sin(nx * 2.1 + nz * 1.7) * 0.5 + 0.5;
+          cloud *= sin(nx * 3.7 - nz * 2.3 + time * 0.025) * 0.5 + 0.5;
+          cloud *= sin(nx * 0.8 + nz * 3.1 - time * 0.01) * 0.5 + 0.5;
+          cloud = pow(cloud, 2.5) * 0.22 * smoothstep(0.0, 0.35, h) * smoothstep(0.9, 0.4, h);
+          sky += vec3(cloud * 0.8, cloud * 0.65, cloud * 0.5);
+
+          // Sun disk near light source direction (35, 65, 25 normalized)
+          // 0.997 ≈ cos(4.4°) — angular half-angle of the sun disk in the shader
+          vec3 sunDir = normalize(vec3(35.0, 65.0, 25.0));
+          float sunDot = dot(dir, sunDir);
+          const float SUN_DISK_EDGE  = 0.997; // cos(~4.4°) — sun disk boundary
+          const float SUN_HALO_EDGE  = 0.970; // cos(~14°)  — halo outer edge
+          float sunDisk = smoothstep(SUN_DISK_EDGE, 1.0, sunDot);
+          float sunHalo = smoothstep(SUN_HALO_EDGE, SUN_DISK_EDGE, sunDot) * 0.35;
+          sky += vec3(1.0, 0.85, 0.5) * (sunDisk + sunHalo);
+
+          gl_FragColor = vec4(sky, 1.0);
+        }
+      `,
+    });
+
+    const skyMesh = new THREE.Mesh(skyGeo, this.skyDomeMaterial);
+    skyMesh.renderOrder = -1;
+    this.scene.add(skyMesh);
+  }
+
   // ── Ground ──────────────────────────────────────────────────────────────
 
   private buildGround(): void {
     const RADIUS = 30;
+
+    // Generate a simple procedural noise DataTexture for the ground normal map
+    // Generate a procedural tangent-space normal map DataTexture for the ground.
+    // Uses finite-difference derivatives of a multi-octave height function to
+    // produce properly normalized tangent-space normals: R=X, G=Y, B=Z in [0,255].
+    const N = 128;
+    const noiseData = new Uint8Array(N * N * 4);
+    // Height function: multi-octave sin/cos noise for bumpy sand surface
+    const height = (x: number, y: number): number =>
+      (Math.sin(x * 37.1 + y * 23.7) * 0.5 + 0.5) * 0.5 +
+      (Math.sin(x * 89.3 - y * 61.1) * 0.5 + 0.5) * 0.3 +
+      (Math.sin(x * 151.7 + y * 117.3) * 0.5 + 0.5) * 0.2;
+
+    const EPS = 0.004;   // finite-difference step in UV space
+    const BUMP_SCALE = 6.0; // controls bump height prominence
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        const idx = (i * N + j) * 4;
+        const fx = j / N;
+        const fy = i / N;
+        // Central-difference gradient → raw tangent-space XY components
+        const dhx = (height(fx + EPS, fy) - height(fx - EPS, fy)) / (2 * EPS);
+        const dhy = (height(fx, fy + EPS) - height(fx, fy - EPS)) / (2 * EPS);
+        // Tangent-space normal: (-∂h/∂x, -∂h/∂y, 1) normalised
+        const nx = -dhx * BUMP_SCALE;
+        const ny = -dhy * BUMP_SCALE;
+        const nz = 1.0;
+        const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        // Map from [-1,1] → [0,255]
+        noiseData[idx]     = Math.round(((nx / len) * 0.5 + 0.5) * 255); // R = X
+        noiseData[idx + 1] = Math.round(((ny / len) * 0.5 + 0.5) * 255); // G = Y
+        noiseData[idx + 2] = Math.round(((nz / len) * 0.5 + 0.5) * 255); // B = Z
+        noiseData[idx + 3] = 255;
+      }
+    }
+    const normalTex = new THREE.DataTexture(noiseData, N, N, THREE.RGBAFormat);
+    normalTex.wrapS = THREE.RepeatWrapping;
+    normalTex.wrapT = THREE.RepeatWrapping;
+    normalTex.repeat.set(6, 6);
+    normalTex.needsUpdate = true;
+
     const geo = new THREE.CylinderGeometry(RADIUS, RADIUS, 0.4, 64);
     const mat = new THREE.MeshPhysicalMaterial({
-      color: 0xc8a96e,
-      roughness: 0.9,
+      color: 0xc8a070,
+      roughness: 0.85,
       metalness: 0.0,
+      normalMap: normalTex,
+      normalScale: new THREE.Vector2(0.6, 0.6),
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     mesh.position.set(0, -0.2, 0);
     this.scene.add(mesh);
 
+    // Stone tile ring around outer edge (r=25-30)
+    const tileRingMat = new THREE.MeshStandardMaterial({
+      color: 0x8a7a60,
+      roughness: 0.7,
+      metalness: 0.0,
+    });
+    const tileRing = new THREE.Mesh(new THREE.RingGeometry(25, 30, 64), tileRingMat);
+    tileRing.rotation.x = -Math.PI / 2;
+    tileRing.position.set(0, 0.02, 0);
+    tileRing.receiveShadow = true;
+    this.scene.add(tileRing);
+
+    // Decorative center medallion
+    this.buildCenterMedallion();
+
     // Static physics body — flat slab
     const body = this.physics.createStaticBody(0, -0.2, 0);
     this.physics.createCuboidCollider(body, RADIUS, 0.2, RADIUS);
   }
 
+  /** Decorative stone medallion/emblem at arena center. */
+  private buildCenterMedallion(): void {
+    const mat1 = new THREE.MeshStandardMaterial({ color: 0x9a8a70, roughness: 0.8 });
+    const mat2 = new THREE.MeshStandardMaterial({ color: 0xc8b090, roughness: 0.7 });
+    const mat3 = new THREE.MeshStandardMaterial({ color: 0x6a5a40, roughness: 0.9 });
+
+    // Outermost ring
+    const ring1 = new THREE.Mesh(new THREE.RingGeometry(4.2, 5.0, 32), mat3);
+    ring1.rotation.x = -Math.PI / 2; ring1.position.y = 0.02;
+    this.scene.add(ring1);
+
+    // Middle ring
+    const ring2 = new THREE.Mesh(new THREE.RingGeometry(2.8, 4.0, 32), mat1);
+    ring2.rotation.x = -Math.PI / 2; ring2.position.y = 0.02;
+    this.scene.add(ring2);
+
+    // Inner ring
+    const ring3 = new THREE.Mesh(new THREE.RingGeometry(1.4, 2.6, 32), mat2);
+    ring3.rotation.x = -Math.PI / 2; ring3.position.y = 0.02;
+    this.scene.add(ring3);
+
+    // Center disk
+    const center = new THREE.Mesh(new THREE.CircleGeometry(1.2, 32), mat3);
+    center.rotation.x = -Math.PI / 2; center.position.y = 0.02;
+    this.scene.add(center);
+
+    // 8-pointed star spokes radiating from center
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const spoke = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 3.5), mat3);
+      spoke.rotation.x = -Math.PI / 2;
+      spoke.rotation.z = angle;
+      spoke.position.y = 0.022;
+      this.scene.add(spoke);
+    }
+  }
+
   /** Add blood stains, sand tracks, and weapon-rack props around arena floor. */
   private buildArenaFloorDetails(): void {
-    // Blood stain decals — small dark red flat planes scattered on floor
-    const bloodMat = new THREE.MeshStandardMaterial({
-      color: 0x5a1010,
-      roughness: 1.0,
-      transparent: true,
-      opacity: 0.75,
-      depthWrite: false,
-    });
-    for (let i = 0; i < 14; i++) {
+    // Blood stain decals — 22 stains with varying age/freshness
+    const FRESH_BLOOD_PROBABILITY = 0.5; // 50% chance each stain is fresh vs. dried
+    for (let i = 0; i < 22; i++) {
+      const fresh = Math.random() > FRESH_BLOOD_PROBABILITY;
+      const bloodMat = new THREE.MeshStandardMaterial({
+        color: fresh ? 0x8b1a1a : 0x3a0808,    // fresh = brighter red, old = dark
+        roughness: 1.0,
+        transparent: true,
+        opacity: fresh ? (0.6 + Math.random() * 0.35) : (0.25 + Math.random() * 0.3),
+        depthWrite: false,
+      });
       const angle = Math.random() * Math.PI * 2;
-      const r = 4 + Math.random() * 22;
-      const w = 0.6 + Math.random() * 1.4;
-      const d = 0.4 + Math.random() * 1.0;
+      const r = 2 + Math.random() * 24;
+      const w = 0.5 + Math.random() * 2.0;
+      const d = 0.3 + Math.random() * 1.5;
       const stain = new THREE.Mesh(new THREE.PlaneGeometry(w, d), bloodMat);
       stain.rotation.x = -Math.PI / 2;
       stain.rotation.z = Math.random() * Math.PI;
-      stain.position.set(Math.cos(angle) * r, 0.01, Math.sin(angle) * r);
+      stain.position.set(Math.cos(angle) * r, 0.012, Math.sin(angle) * r);
       stain.receiveShadow = false;
       this.scene.add(stain);
     }
@@ -147,23 +317,27 @@ export class Arena {
   // ── Colosseum ─────────────────────────────────────────────────────────────
 
   private buildColosseum(): void {
-    // ── Shared materials ──────────────────────────────────────────────────
-    const podiumMat = new THREE.MeshStandardMaterial({
+    // ── Shared materials — MeshPhysicalMaterial for aged Roman stone ──────
+    const podiumMat = new THREE.MeshPhysicalMaterial({
       color: 0xd4c4a0, // warm limestone
-      roughness: 0.8,
-      metalness: 0.0,
-      side: THREE.DoubleSide,
-    });
-    const seatMat = new THREE.MeshStandardMaterial({
-      color: 0xc0b090, // slightly darker stone for seating
       roughness: 0.85,
       metalness: 0.0,
       side: THREE.DoubleSide,
+      emissive: new THREE.Color(0x1a1008),
+      emissiveIntensity: 0.08, // subtle warm tint for torch-lit surfaces
     });
-    const colMat = new THREE.MeshStandardMaterial({
-      color: 0xe0d4c0, // lighter limestone for columns
-      roughness: 0.8,
+    const seatMat = new THREE.MeshPhysicalMaterial({
+      color: 0xb8a880, // slightly darker stone for seating
+      roughness: 0.9,
       metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+    const colMat = new THREE.MeshPhysicalMaterial({
+      color: 0xe0d4c0, // lighter limestone for columns
+      roughness: 0.75,
+      metalness: 0.0,
+      clearcoat: 0.05, // slight aged polish
+      clearcoatRoughness: 0.8,
     });
     const archFillMat = new THREE.MeshStandardMaterial({
       color: 0x101010, // dark shadow inside arches / gate tunnels
@@ -196,6 +370,42 @@ export class Arena {
     podWall.receiveShadow = true;
     podWall.castShadow = true;
     this.scene.add(podWall);
+
+    // Stone course seam lines on podium wall — darker horizontal bands
+    const seamMat = new THREE.MeshStandardMaterial({
+      color: 0x8a7a5a,
+      roughness: 1.0,
+    });
+    for (let s = 0; s < 3; s++) {
+      const seamY = 0.8 + s * 1.0;
+      const seam = new THREE.Mesh(
+        new THREE.CylinderGeometry(32.02, 32.02, 0.04, 64, 1, true),
+        seamMat,
+      );
+      seam.position.set(0, seamY, 0);
+      this.scene.add(seam);
+    }
+
+    // Moss/stain patches on lower wall portions (below y=3)
+    const mossMat = new THREE.MeshStandardMaterial({
+      color: 0x3a5a30, // dark moss green
+      roughness: 1.0,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    for (let m = 0; m < 20; m++) {
+      const angle = Math.random() * Math.PI * 2;
+      const mx = Math.cos(angle) * 31.9;
+      const mz = Math.sin(angle) * 31.9;
+      const mossW = 0.8 + Math.random() * 2.0;
+      const mossH = 0.5 + Math.random() * 1.5;
+      const moss = new THREE.Mesh(new THREE.PlaneGeometry(mossW, mossH), mossMat);
+      moss.position.set(mx, 0.8 + Math.random() * 1.5, mz);
+      moss.rotation.y = angle + Math.PI; // face inward
+      this.scene.add(moss);
+    }
 
     // Arch niches on podium wall (rectangular alcoves)
     const NICHE_COUNT = 16;
@@ -545,29 +755,52 @@ export class Arena {
   // ── Torches ──────────────────────────────────────────────────────────────
 
   private addTorch(x: number, y: number, z: number): void {
-    const light = new THREE.PointLight(0xff6622, 5.0, 30, 2);
+    // Stronger point light with larger range for dramatic torch-lit surfaces
+    const light = new THREE.PointLight(0xff6622, 8.0, 40, 2);
     light.position.set(x, y, z);
     light.castShadow = false;
     this.scene.add(light);
 
-    // Fire billboard — double-sided plane with emissive orange material
+    // Main fire billboard — larger, brighter
     const fireMat = new THREE.MeshStandardMaterial({
-      color: 0xff8833,
-      emissive: new THREE.Color(0xff4400),
-      emissiveIntensity: 3.0,
+      color: 0xff9944,
+      emissive: new THREE.Color(0xff5500),
+      emissiveIntensity: 4.0,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.9,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
-    const firePlane = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.6), fireMat);
-    firePlane.position.set(x, y + 0.2, z);
+    const firePlane = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.75), fireMat);
+    firePlane.position.set(x, y + 0.25, z);
     this.scene.add(firePlane);
+
+    // Second fire billboard at 90° — gives volumetric cross appearance
+    const firePlane2 = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.65), fireMat);
+    firePlane2.position.set(x, y + 0.2, z);
+    firePlane2.rotation.y = Math.PI / 2;
+    this.scene.add(firePlane2);
+
+    // Emissive glow halo — additive blending soft disc
+    const haloMat = new THREE.MeshStandardMaterial({
+      color: 0xff8800,
+      emissive: new THREE.Color(0xff6600),
+      emissiveIntensity: 2.0,
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const halo = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), haloMat);
+    halo.position.set(x, y + 0.15, z);
+    halo.rotation.y = Math.PI / 4;
+    this.scene.add(halo);
 
     this.torches.push({
       light,
       speed: 2 + Math.random() * 3,
-      base: 5.0,
+      base: 8.0,
     });
 
     this.createEmberSystem(x, y, z);
@@ -576,8 +809,8 @@ export class Arena {
   // ── Lighting ─────────────────────────────────────────────────────────────
 
   private buildLighting(): void {
-    // Warm golden sun, slightly off-center for dramatic shadows
-    const sun = new THREE.DirectionalLight(0xfff0c8, 3.0);
+    // Key light — warm golden sun, angled for long dramatic shadows
+    const sun = new THREE.DirectionalLight(0xffd4a0, 2.5);
     sun.position.set(35, 65, 25);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -587,20 +820,25 @@ export class Arena {
     sun.shadow.camera.right = 70;
     sun.shadow.camera.top = 70;
     sun.shadow.camera.bottom = -70;
-    sun.shadow.bias = -0.0005;
+    sun.shadow.bias = -0.001; // crisp shadows
     this.scene.add(sun);
 
-    // Subtle fill light from opposite side (quarter intensity)
-    const fill = new THREE.DirectionalLight(0xc0d8ff, 0.7);
+    // Fill light — cool blue-white from opposite side, no shadows
+    const fill = new THREE.DirectionalLight(0xb0c8ff, 0.3);
     fill.position.set(-30, 30, -20);
     this.scene.add(fill);
 
-    // Warm ambient
-    const ambient = new THREE.AmbientLight(0xffefd5, 0.4);
+    // Rim light — subtle edge highlights on warrior from above/behind
+    const rim = new THREE.DirectionalLight(0xffd8a0, 0.4);
+    rim.position.set(-10, 50, -40);
+    this.scene.add(rim);
+
+    // Ambient — reduced for more dramatic contrast
+    const ambient = new THREE.AmbientLight(0xffefd5, 0.2);
     this.scene.add(ambient);
 
-    // Hemisphere — sky blue top, warm sand bounce bottom
-    const hemi = new THREE.HemisphereLight(0x87ceeb, 0xd4a96e, 0.8);
+    // Hemisphere — cool sky blue top, warm sand bounce bottom
+    const hemi = new THREE.HemisphereLight(0x8888cc, 0xc8a060, 0.5);
     this.scene.add(hemi);
 
     // 8 torches evenly spaced on the column ring at height 4.8

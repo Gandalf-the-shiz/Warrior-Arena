@@ -10,79 +10,91 @@ export enum EnemyType {
   NECROMANCER = 'NECROMANCER',
 }
 
-// ── Shared skeleton materials (pale ivory — contrasts with sand floor) ───────
+// ── Shared skeleton materials — whiter bone with subtle emissive for visibility ─
 const MAT_BONE = new THREE.MeshStandardMaterial({
-  color: 0xe8e0d0, // pale ivory white — distinct from sandy arena
-  roughness: 0.6,
-  metalness: 0.1,
+  color: 0xf0ead8, // whiter bone — more visible and menacing
+  roughness: 0.55,
+  metalness: 0.05,
+  emissive: new THREE.Color(0x151008),
+  emissiveIntensity: 0.3, // faint warm glow for visibility
 });
 const MAT_JOINT = new THREE.MeshStandardMaterial({
-  color: 0xc0b8a0, // lighter stone gray
-  roughness: 0.7,
-  metalness: 0.1,
+  color: 0xd0c8b0, // lighter joint color
+  roughness: 0.65,
+  metalness: 0.05,
+  emissive: new THREE.Color(0x100c04),
+  emissiveIntensity: 0.2,
 });
 const MAT_WEAPON = new THREE.MeshStandardMaterial({
-  color: 0x555555, // dark iron gray — contrasts with sand AND bone
-  roughness: 0.5,
-  metalness: 0.6,
-  emissive: new THREE.Color(0x100808),
-  emissiveIntensity: 0.5,
+  color: 0x6a5040, // rusty iron — aged and corroded
+  roughness: 0.75,
+  metalness: 0.4,
+  emissive: new THREE.Color(0x1a0808),
+  emissiveIntensity: 0.4,
 });
 const MAT_EYE = new THREE.MeshStandardMaterial({
   color: 0x000000,
   emissive: new THREE.Color(0xff2200),
-  emissiveIntensity: 4.0,
-  roughness: 0.3,
+  emissiveIntensity: 6.0, // brighter eye glow
+  roughness: 0.1,
 });
 
-// ── Ghoul materials ──────────────────────────────────────────────────────────
+// ── Ghoul materials — sickly green with ghostly emissive aura ─────────────────
 const MAT_GHOUL_BODY = new THREE.MeshStandardMaterial({
-  color: 0x556b55, // dark muted green — distinct from sand
-  roughness: 0.8,
-  metalness: 0.0,
-});
-const MAT_GHOUL_JOINT = new THREE.MeshStandardMaterial({
-  color: 0x3d5a3d, // darker green
+  color: 0x445a44, // darker, more sickly green
   roughness: 0.85,
   metalness: 0.0,
+  emissive: new THREE.Color(0x0a1a0a),
+  emissiveIntensity: 0.5, // faint green aura
+  transparent: true,
+  opacity: 0.95, // slight ghostly translucency
+});
+const MAT_GHOUL_JOINT = new THREE.MeshStandardMaterial({
+  color: 0x2e452e, // darker green joints
+  roughness: 0.9,
+  metalness: 0.0,
+  emissive: new THREE.Color(0x061006),
+  emissiveIntensity: 0.4,
 });
 const MAT_GHOUL_WEAPON = new THREE.MeshStandardMaterial({
-  color: 0x508050, // visible green metal
-  roughness: 0.9,
-  metalness: 0.1,
-  emissive: new THREE.Color(0x204020),
-  emissiveIntensity: 0.8,
+  color: 0x406040, // corroded green metal
+  roughness: 0.85,
+  metalness: 0.15,
+  emissive: new THREE.Color(0x1a3018),
+  emissiveIntensity: 1.0,
 });
 const MAT_GHOUL_EYE = new THREE.MeshStandardMaterial({
   color: 0x000000,
-  emissive: new THREE.Color(0x44ff00),
-  emissiveIntensity: 3.0,
-  roughness: 0.3,
+  emissive: new THREE.Color(0x44ff22),
+  emissiveIntensity: 6.0, // brighter sickly green glow
+  roughness: 0.1,
 });
 
-// ── Brute materials ──────────────────────────────────────────────────────────
-const MAT_BRUTE_BODY = new THREE.MeshStandardMaterial({
-  color: 0x6b3030, // dark blood red — very distinct from sand
+// ── Brute materials — darker with heavy armor and red glowing eyes ─────────────
+const MAT_BRUTE_BODY = new THREE.MeshPhysicalMaterial({
+  color: 0x4a2020, // very dark, heavy armor
   roughness: 0.6,
-  metalness: 0.2,
+  metalness: 0.3,
+  clearcoat: 0.2,
+  clearcoatRoughness: 0.7,
 });
 const MAT_BRUTE_JOINT = new THREE.MeshStandardMaterial({
-  color: 0x4a2020, // dark maroon
+  color: 0x3a1515, // deep dark maroon
   roughness: 0.7,
-  metalness: 0.15,
+  metalness: 0.2,
 });
 const MAT_BRUTE_WEAPON = new THREE.MeshStandardMaterial({
-  color: 0x604030, // visible dark metal
-  roughness: 0.6,
-  metalness: 0.5,
-  emissive: new THREE.Color(0x401808),
+  color: 0x504030, // dark heavy iron
+  roughness: 0.55,
+  metalness: 0.55,
+  emissive: new THREE.Color(0x501808),
   emissiveIntensity: 0.8,
 });
 const MAT_BRUTE_EYE = new THREE.MeshStandardMaterial({
   color: 0x000000,
-  emissive: new THREE.Color(0xff6600),
-  emissiveIntensity: 4.0,
-  roughness: 0.3,
+  emissive: new THREE.Color(0xff3300),
+  emissiveIntensity: 7.0, // intense red demonic eyes
+  roughness: 0.1,
 });
 
 // ── Necromancer materials ─────────────────────────────────────────────────────

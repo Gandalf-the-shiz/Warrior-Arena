@@ -525,7 +525,7 @@ async function main(): Promise<void> {
     },
     // onRender
     () => {
-      renderer.render();
+      renderer.render(elapsed);
     },
   );
 
