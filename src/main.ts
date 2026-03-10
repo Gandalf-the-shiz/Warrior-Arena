@@ -103,6 +103,8 @@ async function main(): Promise<void> {
   // ── Core systems ───────────────────────────────────────────────────────
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
   const renderer = new Renderer(canvas);
+  // Build procedural environment cubemap — provides IBL reflections for all PBR materials
+  renderer.buildEnvironmentMap();
   const physics = new PhysicsWorld();
   const input = new InputManager(canvas);
   const hud = new HUD();
@@ -407,6 +409,7 @@ async function main(): Promise<void> {
           }
           levelSystem.addXP(xpType, styleMeter.rank);
           killStreakCount++;
+          arena.onEnemyKilled();
           vfx.onKill(player.getPosition());
           if (killStreakCount === 5) { audio.playKillStreak5(); }
           else if (killStreakCount === 10) { audio.playKillStreak10(); }

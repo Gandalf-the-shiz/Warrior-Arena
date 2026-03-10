@@ -102,6 +102,8 @@ const MAT_NECRO_ROBE = new THREE.MeshStandardMaterial({
   color: 0x1a0a2e, // dark purple-black robe
   roughness: 0.85,
   metalness: 0.05,
+  emissive: new THREE.Color(0x1a0040),
+  emissiveIntensity: 0.8, // subtle purple glow from within the robe
 });
 const MAT_NECRO_SKULL = new THREE.MeshStandardMaterial({
   color: 0xc8b8a0, // pale skull
@@ -111,20 +113,22 @@ const MAT_NECRO_SKULL = new THREE.MeshStandardMaterial({
 const MAT_NECRO_EYE = new THREE.MeshStandardMaterial({
   color: 0x000000,
   emissive: new THREE.Color(0x00ff55),
-  emissiveIntensity: 5.0,
-  roughness: 0.3,
+  emissiveIntensity: 8.0, // intense green glow
+  roughness: 0.1,
 });
 const MAT_NECRO_STAFF = new THREE.MeshStandardMaterial({
   color: 0x2a1a0a, // dark wood
   roughness: 0.8,
   metalness: 0.1,
 });
-const MAT_NECRO_ORB = new THREE.MeshStandardMaterial({
+const MAT_NECRO_ORB = new THREE.MeshPhysicalMaterial({
   color: 0x00ff55,
   emissive: new THREE.Color(0x00ff55),
-  emissiveIntensity: 4.0,
-  roughness: 0.2,
-  metalness: 0.2,
+  emissiveIntensity: 6.0, // pulsing orb
+  roughness: 0.1,
+  metalness: 0.1,
+  clearcoat: 1.0,
+  clearcoatRoughness: 0.0,
   transparent: true,
   opacity: 0.9,
 });

@@ -40,6 +40,19 @@ export class Arena {
   private readonly spectatorRows: SpectatorRow[] = [];
   private skyDomeMaterial: THREE.ShaderMaterial | null = null;
 
+  /** Ground material — saved for blood accumulation updates. */
+  private floorMat: THREE.MeshPhysicalMaterial | null = null;
+  /** Total enemy kills accumulated — used to darken the sand. */
+  private killCount = 0;
+
+  /** Sandy pristine color → dark blood-soaked crimson */
+  private readonly SAND_COLOR   = new THREE.Color(0xc8a070);
+  private readonly BLOOD_COLOR  = new THREE.Color(0x3a0a08);
+  private readonly _colorScratch = new THREE.Color();
+
+  /** Number of kills after which the floor reaches full blood saturation. */
+  private static readonly MAX_KILLS_FOR_BLOOD_SATURATION = 60;
+
   constructor(
     private readonly scene: THREE.Scene,
     private readonly physics: PhysicsWorld,
@@ -72,6 +85,23 @@ export class Arena {
   }
 
   // ── Sky Dome ────────────────────────────────────────────────────────────
+
+  /**
+   * Call whenever an enemy is killed to progressively soak the arena floor
+   * in blood. Color lerps from sandy (#c8a070) to dark crimson (#3a0a08)
+   * over the first 60 kills, then stays fully blood-soaked.
+   */
+  onEnemyKilled(): void {
+    this.killCount++;
+    if (this.floorMat === null) return;
+    // Full blood-soak after MAX_KILLS_FOR_BLOOD_SATURATION kills
+    const t = Math.min(this.killCount / Arena.MAX_KILLS_FOR_BLOOD_SATURATION, 1.0);
+    this._colorScratch.lerpColors(this.SAND_COLOR, this.BLOOD_COLOR, t);
+    // Roughness decreases slightly as wet blood covers the sand
+    this.floorMat.color.copy(this._colorScratch);
+    this.floorMat.roughness = THREE.MathUtils.lerp(0.85, 0.55, t);
+    this.floorMat.needsUpdate = true;
+  }
 
   private buildSkyDome(): void {
     // Inside-facing sphere for procedural gradient sky
@@ -187,6 +217,7 @@ export class Arena {
       normalMap: normalTex,
       normalScale: new THREE.Vector2(0.6, 0.6),
     });
+    this.floorMat = mat;
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     mesh.position.set(0, -0.2, 0);
