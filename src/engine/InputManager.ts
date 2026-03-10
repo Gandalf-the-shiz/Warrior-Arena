@@ -9,6 +9,7 @@ export class InputManager {
   private keys: Record<string, boolean> = {};
   private pausePressedThisFrame = false;
   private finisherPressedThisFrame = false;
+  private shieldBashPressedThisFrame = false;
 
   // ── Mouse state ────────────────────────────────────────────────────────
   private mouseDeltaX = 0;
@@ -135,6 +136,23 @@ export class InputManager {
     return val;
   }
 
+  /**
+   * Returns true while Q is held down — player is raising shield to block.
+   */
+  isBlocking(): boolean {
+    return this.keys['KeyQ'] === true;
+  }
+
+  /**
+   * Edge-triggered — returns true once when LMB is clicked while blocking.
+   * Resets after being read. Used for shield bash.
+   */
+  isShieldBashing(): boolean {
+    const val = this.shieldBashPressedThisFrame;
+    this.shieldBashPressedThisFrame = false;
+    return val;
+  }
+
   /** Mouse-delta in pixels since the last frame (pointer-lock). */
   getMouseDelta(): { x: number; y: number } {
     const delta = { x: this.mouseDeltaX, y: this.mouseDeltaY };
@@ -192,12 +210,17 @@ export class InputManager {
       }
     });
 
-    // Left-click = light attack, right-click = heavy attack when locked
+    // Left-click = light attack (or shield bash if blocking), right-click = heavy attack when locked
     window.addEventListener('mousedown', (e) => {
       if (this.pointerLocked && e.button === 0) {
-        this.mouseAttack = true;
-        this.attackButtonDown = true;
-        this.attackPressTimestamp = Date.now();
+        if (this.keys['KeyQ']) {
+          // LMB while blocking = shield bash (edge-triggered)
+          this.shieldBashPressedThisFrame = true;
+        } else {
+          this.mouseAttack = true;
+          this.attackButtonDown = true;
+          this.attackPressTimestamp = Date.now();
+        }
       }
       if (this.pointerLocked && e.button === 2) {
         this.mouseHeavyAttack = true;

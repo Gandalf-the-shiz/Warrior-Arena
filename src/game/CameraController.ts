@@ -6,16 +6,26 @@ const MIN_PITCH = -20 * (Math.PI / 180); // −20°
 const MAX_PITCH = 60 * (Math.PI / 180);  //  60°
 const CAM_LERP = 0.1;
 const SENSITIVITY = 0.003;
+const MOUSE_YAW_DECAY = 3.0; // rate at which mouse orbit offset decays back to 0
 
 /**
  * Third-person camera (Dark Souls / Skyrim style).
- * The camera yaw is driven by mouse X input — independent of player facing.
- * Movement is camera-relative: W always moves toward the camera's look direction.
- * Orbits around the player and avoids geometry via raycasting.
+ * The camera yaw tracks the player's facing direction with a mouse-orbit offset.
+ * Mouse X adds a temporary orbital offset that decays back to 0, so the camera
+ * always settles back directly behind the warrior after the player stops moving
+ * the mouse. Movement is camera-relative: W always moves toward the camera's
+ * look direction. Orbits around the player and avoids geometry via raycasting.
  */
 export class CameraController {
-  /** Current horizontal yaw (radians). Driven by mouse X. Read by PlayerController for camera-relative movement. */
+  /**
+   * Current horizontal yaw (radians).
+   * Equals playerFacingYaw + mouseYawOffset — used by PlayerController for
+   * camera-relative movement direction.
+   */
   yaw = 0;
+
+  /** Temporary mouse orbit offset — decays to 0 over time. */
+  private mouseYawOffset = 0;
 
   private pitch = 0.3; // slight downward tilt at start
   private readonly targetPosition = new THREE.Vector3();
@@ -88,18 +98,33 @@ export class CameraController {
 
   /**
    * Called every visual frame.
-   * @param playerPos  World-space position of the player.
-   * @param delta      Frame delta time (seconds).
+   * @param playerPos        World-space position of the player.
+   * @param delta            Frame delta time (seconds).
+   * @param playerFacingYaw  Current Y-axis rotation of the warrior mesh (radians).
+   *                         Camera yaw tracks this value so the camera stays
+   *                         directly behind the warrior when the mouse is idle.
    *
-   * Camera yaw is now controlled by mouse X input (not player facing).
-   * This allows the player to look around the arena independently.
+   * Camera yaw = playerFacingYaw + mouseYawOffset.
+   * Mouse X input adds to mouseYawOffset; it decays back toward 0 at
+   * MOUSE_YAW_DECAY per second so the camera snaps back behind the warrior.
    */
-  update(playerPos: THREE.Vector3, delta: number): void {
+  update(playerPos: THREE.Vector3, delta: number, playerFacingYaw = 0): void {
     // ── Camera yaw and pitch from mouse / touch input ─────────────────────
     const mouse = this.input.getMouseDelta();
-    this.yaw -= mouse.x * SENSITIVITY;   // horizontal orbit from mouse X
-    this.pitch -= mouse.y * SENSITIVITY; // vertical tilt from mouse Y
+    this.mouseYawOffset -= mouse.x * SENSITIVITY;  // mouse adds temporary orbit
+    this.pitch -= mouse.y * SENSITIVITY;            // vertical tilt stays direct
     this.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, this.pitch));
+
+    // Decay mouse orbit offset back toward 0 (camera settles behind warrior)
+    const decayAmount = MOUSE_YAW_DECAY * delta;
+    if (Math.abs(this.mouseYawOffset) > decayAmount) {
+      this.mouseYawOffset -= Math.sign(this.mouseYawOffset) * decayAmount;
+    } else {
+      this.mouseYawOffset = 0;
+    }
+
+    // Final yaw is warrior facing + temporary mouse orbit
+    this.yaw = playerFacingYaw + this.mouseYawOffset;
 
     // ── Compute desired camera position ───────────────────────────────────
     // Build rotation matrix from yaw + pitch

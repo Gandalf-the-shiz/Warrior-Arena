@@ -3,6 +3,7 @@ import { AnimState } from '@/game/AnimationStateMachine';
 import { PlayerController } from '@/game/PlayerController';
 import { Enemy } from '@/game/Enemy';
 import { BossEnemy } from '@/game/BossEnemy';
+import { EnemyCommander } from '@/game/EnemyCommander';
 import { VFXManager } from '@/game/VFXManager';
 import { StyleMeter } from '@/game/StyleMeter';
 
@@ -14,12 +15,18 @@ const ENEMY_ATTACK_REACH = 2.5;
 
 // Impact parameters by attack weight
 const HEAVY_DAMAGE_THRESHOLD = 40;
-const HEAVY_SHAKE_INTENSITY = 0.18;
-const HEAVY_SHAKE_DURATION = 0.18;
-const LIGHT_SHAKE_INTENSITY = 0.09;
-const LIGHT_SHAKE_DURATION = 0.12;
-const HEAVY_HITSTOP = 0.05; // seconds
-const LIGHT_HITSTOP = 0.03; // seconds
+const HEAVY_SHAKE_INTENSITY = 0.12;
+const HEAVY_SHAKE_DURATION = 0.15;
+const LIGHT_SHAKE_INTENSITY = 0.05;
+const LIGHT_SHAKE_DURATION = 0.08;
+const KILL_SHAKE_INTENSITY = 0.08;
+const KILL_SHAKE_DURATION = 0.12;
+const HEAVY_HITSTOP = 0.10; // seconds (100ms)
+const LIGHT_HITSTOP = 0.05; // seconds (50ms)
+const FINISHER_HITSTOP = 0.15; // seconds (150ms)
+
+/** Cosine threshold for "frontal" arc — cos(120°) = -0.5, covers 120° arc in front. */
+const FRONTAL_BLOCK_DOT_THRESHOLD = -0.5;
 
 /**
  * Detects melee contacts and applies damage, knockback, hitstop, and VFX.
@@ -57,6 +64,7 @@ export class CombatSystem {
     onHitVFX?: (pos: THREE.Vector3, damage: number, isHeavy: boolean, isFinisher: boolean) => void,
     onEnemyKilled?: (position: THREE.Vector3) => void,
     boss?: BossEnemy | null,
+    commanders?: readonly EnemyCommander[],
   ): void {
     if (player.isDead) return;
 
@@ -68,6 +76,11 @@ export class CombatSystem {
     if (boss && !boss.isDead) {
       this.processBossPlayerAttacks(player, boss, vfx, onHitstop, styleMeter, onEnemyHit, onHitVFX, onEnemyKilled);
       this.processBossAttack(player, boss, vfx, styleMeter);
+    }
+
+    // Commander combat
+    if (commanders && commanders.length > 0) {
+      this.processCommanderCombat(player, commanders, vfx, onHitstop, styleMeter, onEnemyHit, onHitVFX, onEnemyKilled);
     }
   }
 
@@ -138,20 +151,37 @@ export class CombatSystem {
       const hitPos = enemy.getPosition().clone().add(new THREE.Vector3(0, 0.5, 0));
       vfx.spawnBlood(hitPos, knockbackDir);
 
-      // Camera shake — heavy hit shakes more
+      // Hit flash — enemy turns white for one frame
+      vfx.spawnHitFlash(enemy.group);
+
+      // Hit sparks
+      vfx.spawnHitSparks(hitPos, knockbackDir);
+
+      // Camera shake — heavy hit / kill shakes more
       const isHeavy = actualDamage >= HEAVY_DAMAGE_THRESHOLD;
       const isFinisher = player.anim.currentState === AnimState.ATTACK_LIGHT_3;
-      vfx.shakeCamera(
-        isHeavy ? HEAVY_SHAKE_INTENSITY : LIGHT_SHAKE_INTENSITY,
-        isHeavy ? HEAVY_SHAKE_DURATION  : LIGHT_SHAKE_DURATION,
-      );
+
+      if (enemy.isDead) {
+        vfx.shakeCamera(KILL_SHAKE_INTENSITY, KILL_SHAKE_DURATION);
+      } else {
+        vfx.shakeCamera(
+          isHeavy ? HEAVY_SHAKE_INTENSITY : LIGHT_SHAKE_INTENSITY,
+          isHeavy ? HEAVY_SHAKE_DURATION  : LIGHT_SHAKE_DURATION,
+        );
+      }
+
+      // Ground slam ring for heavy attack
+      if (isHeavy) {
+        vfx.spawnGroundSlam(playerPos.clone());
+      }
 
       // Damage number VFX
       const damagePos = enemyPosBefore.clone().add(new THREE.Vector3(0, 1.5, 0));
       onHitVFX?.(damagePos, actualDamage, isHeavy, isFinisher);
 
-      // Hitstop — 50 ms for heavy, 30 ms for light
-      onHitstop(isHeavy ? HEAVY_HITSTOP : LIGHT_HITSTOP);
+      // Hitstop — 150ms finisher, 100ms heavy, 50ms light
+      const hitstopDur = isFinisher ? FINISHER_HITSTOP : isHeavy ? HEAVY_HITSTOP : LIGHT_HITSTOP;
+      onHitstop(hitstopDur);
     }
   }
 
@@ -171,7 +201,27 @@ export class CombatSystem {
       if (dist > ENEMY_ATTACK_REACH) continue;
 
       enemy.markDamageDealt();
-      player.takeDamage(enemy.attackDamage);
+
+      let damage = enemy.attackDamage;
+
+      // ── Block / parry check ──────────────────────────────────────────────
+      if (player.isBlocking) {
+        // Check if hit is frontal (within 120° arc of player facing)
+        const toEnemy = enemy.getPosition().clone().sub(playerPos).normalize();
+        const forward = player.getForward();
+        const dot = forward.dot(toEnemy);
+        if (dot > FRONTAL_BLOCK_DOT_THRESHOLD) {
+          // Frontal: 70% damage reduction
+          damage = Math.round(damage * 0.3);
+          vfx.shakeCamera(0.04, 0.06);
+        }
+        // Blocked hit doesn't break blocking state or trigger HIT animation
+        player.hp = Math.max(0, player.hp - Math.max(1, damage));
+        if (player.hp <= 0) { player.isDead = true; }
+        continue;
+      }
+
+      player.takeDamage(damage);
 
       if (!player.isDead) {
         styleMeter?.onPlayerDamage();
@@ -284,6 +334,66 @@ export class CombatSystem {
         if (!player.isDead) {
           vfx.shakeCamera(0.3, 0.5);
           vfx.spawnBloodFlash();
+        }
+      }
+    }
+  }
+
+  /** Process player attacks on commanders and commander melee attacks on player. */
+  private processCommanderCombat(
+    player: PlayerController,
+    commanders: readonly EnemyCommander[],
+    vfx: VFXManager,
+    onHitstop: (duration: number) => void,
+    styleMeter?: StyleMeter,
+    onEnemyHit?: () => void,
+    onHitVFX?: (pos: THREE.Vector3, damage: number, isHeavy: boolean, isFinisher: boolean) => void,
+    onEnemyKilled?: (position: THREE.Vector3) => void,
+  ): void {
+    const hitInfo = player.getAttackHitInfo();
+    const playerPos = player.getPosition();
+
+    for (const commander of commanders) {
+      if (commander.isDead) continue;
+
+      // Player → Commander
+      if (hitInfo) {
+        const hitCenter = playerPos.clone().addScaledVector(hitInfo.forward, HIT_RANGE_FORWARD);
+        const dist = commander.getPosition().distanceTo(hitCenter);
+        if (dist <= hitInfo.hitRadius * 1.5 && !this.hitEnemiesThisSwing.has(commander as unknown as Enemy)) {
+          this.hitEnemiesThisSwing.add(commander as unknown as Enemy);
+          const knockbackDir = commander.getPosition().clone().sub(playerPos).normalize();
+          const actualDamage = Math.round(hitInfo.damage * player.getEffectiveDamageMultiplier());
+          const posBefore = commander.getPosition().clone();
+          commander.takeDamage(actualDamage, knockbackDir);
+          styleMeter?.registerHit();
+          onEnemyHit?.();
+          if (commander.isDead) {
+            onEnemyKilled?.(posBefore);
+          }
+          const hitPos = commander.getPosition().clone().add(new THREE.Vector3(0, 0.8, 0));
+          vfx.spawnBlood(hitPos, knockbackDir);
+          vfx.spawnHitFlash(commander.group);
+          vfx.spawnHitSparks(hitPos, knockbackDir);
+          const isHeavy = actualDamage >= HEAVY_DAMAGE_THRESHOLD;
+          const isFinisher = player.anim.currentState === AnimState.ATTACK_LIGHT_3;
+          vfx.shakeCamera(isHeavy ? HEAVY_SHAKE_INTENSITY : LIGHT_SHAKE_INTENSITY, isHeavy ? HEAVY_SHAKE_DURATION : LIGHT_SHAKE_DURATION);
+          onHitVFX?.(posBefore.clone().add(new THREE.Vector3(0, 1.8, 0)), actualDamage, isHeavy, isFinisher);
+          onHitstop(isHeavy ? HEAVY_HITSTOP : LIGHT_HITSTOP);
+        }
+      }
+
+      // Commander → Player
+      if (commander.isInStrikeWindow()) {
+        const dist = commander.getPosition().distanceTo(playerPos);
+        if (dist <= ENEMY_ATTACK_REACH * 1.5) {
+          commander.markDamageDealt();
+          player.takeDamage(commander.attackDamage);
+          if (!player.isDead) {
+            styleMeter?.onPlayerDamage();
+            vfx.shakeCamera(0.14, 0.22);
+            vfx.spawnBloodFlash();
+          }
         }
       }
     }

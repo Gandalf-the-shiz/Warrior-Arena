@@ -98,6 +98,9 @@ export class WarriorModel {
   readonly swordGroup: THREE.Group;
   readonly capeGroup: THREE.Group;
 
+  /** Shield mesh — visible only during BLOCK/SHIELD_BASH states. */
+  readonly shieldGroup: THREE.Group;
+
   // Cape geometry reference for vertex-wave animation
   private readonly capeGeo: THREE.BufferGeometry;
   private readonly capeBasePositions: Float32Array;
@@ -236,6 +239,32 @@ export class WarriorModel {
     this.leftArmGroup.add(leftGauntlet);
 
     this.torsoGroup.add(this.leftArmGroup);
+
+    // ── Shield (kite shield on left forearm) ──────────────────────────────
+    const shieldMat = new THREE.MeshStandardMaterial({
+      color: 0x2a2a3a,
+      metalness: 0.8,
+      roughness: 0.3,
+    });
+    const shieldEmblemMat = new THREE.MeshStandardMaterial({
+      color: 0xaa2200,
+      emissive: new THREE.Color(0x660000),
+      emissiveIntensity: 1.0,
+      metalness: 0.6,
+      roughness: 0.4,
+    });
+    this.shieldGroup = new THREE.Group();
+    // Kite shield body
+    const shieldBody = mkMesh(new THREE.BoxGeometry(0.28, 0.42, 0.05), shieldMat);
+    this.shieldGroup.add(shieldBody);
+    // Red emblem inset
+    const shieldEmblem = mkMesh(new THREE.BoxGeometry(0.10, 0.16, 0.03), shieldEmblemMat);
+    shieldEmblem.position.set(0, 0.04, 0.03);
+    this.shieldGroup.add(shieldEmblem);
+    // Position shield on left forearm
+    this.shieldGroup.position.set(0, -0.68, 0.08);
+    this.shieldGroup.visible = false; // hidden until BLOCK state
+    this.leftArmGroup.add(this.shieldGroup);
 
     // ── Right arm ─────────────────────────────────────────────────────────
     this.rightArmGroup = new THREE.Group();
@@ -427,5 +456,10 @@ export class WarriorModel {
         }
       }
     });
+  }
+
+  /** Show or hide the shield mesh (call from PlayerController on block enter/exit). */
+  setShieldVisible(visible: boolean): void {
+    this.shieldGroup.visible = visible;
   }
 }

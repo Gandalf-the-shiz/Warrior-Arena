@@ -16,11 +16,15 @@ const MAX_STAMINA = 100;
 const STAMINA_REGEN_RATE = 20; // per second
 const DODGE_COST = 25;
 const HEAVY_ATTACK_COST = 30;
+const SHIELD_BASH_COST = 15;
+const BLOCK_DRAIN_RATE = 5; // stamina per second while blocking
 const STAMINA_REGEN_PAUSE = 0.5; // seconds after spending
 
 // Combo system
 const COMBO_WINDOW = 0.4; // seconds to follow-up with next hit
 const DODGE_IFRAME_DURATION = 0.15; // seconds of invincibility at dodge start
+const DASH_ATTACK_COST = 20; // stamina cost for dash attack
+const DASH_ATTACK_IMPULSE = 12; // forward impulse units
 
 // Footstep dust particle constants
 const DUST_PARTICLE_COUNT = 18;
@@ -62,6 +66,9 @@ export class PlayerController {
   /** Optional skill system — set from main.ts after creation. */
   skillSystem: SkillSystem | null = null;
 
+  /** Optional callback invoked when player shield-bashes (for VFX/audio). */
+  onShieldBash: (() => void) | null = null;
+
   // ── Stamina ───────────────────────────────────────────────────────────────
   stamina = MAX_STAMINA;
   readonly maxStamina = MAX_STAMINA;
@@ -77,6 +84,14 @@ export class PlayerController {
 
   // ── Dodge i-frames ────────────────────────────────────────────────────────
   private dodgeIFrameTimer = 0;
+
+  // ── Blocking state ────────────────────────────────────────────────────────
+  isBlocking = false;
+  private shieldBashCooldown = 0;
+
+  // ── Dash attack ───────────────────────────────────────────────────────────
+  private dashAttackTimer = 0;
+  private readonly DASH_ATTACK_DURATION = 0.3;
 
   private isGrounded = false;
   private readonly targetRotation = new THREE.Quaternion();
@@ -155,9 +170,11 @@ export class PlayerController {
       const worldX = move.x * cos - move.z * sin;
       const worldZ = move.x * sin + move.z * cos;
 
+      // Speed reductions: 50% while blocking, 0 during dash attack (handled separately)
+      const speedMult = this.isBlocking ? 0.5 : 1.0;
       const vel = this.body.linvel();
       this.body.setLinvel(
-        { x: worldX * MOVE_SPEED, y: vel.y, z: worldZ * MOVE_SPEED },
+        { x: worldX * MOVE_SPEED * speedMult, y: vel.y, z: worldZ * MOVE_SPEED * speedMult },
         true,
       );
 
@@ -224,38 +241,94 @@ export class PlayerController {
       AnimState.ATTACK_LIGHT_2,
       AnimState.ATTACK_LIGHT_3,
       AnimState.ATTACK_HEAVY,
+      AnimState.DASH_ATTACK,
     ].includes(current);
 
-    if (!isAttacking && current !== AnimState.DEATH && current !== AnimState.HIT) {
-      if (this.input.isDodging() && this.stamina >= DODGE_COST) {
-        this.anim.setState(AnimState.DODGE);
-        this.consumeStamina(DODGE_COST);
-        // Grant dodge i-frames for the first 0.15 s
-        this.dodgeIFrameTimer = DODGE_IFRAME_DURATION;
-        this.invincibilityTimer = Math.max(this.invincibilityTimer, DODGE_IFRAME_DURATION);
-        this.warrior.setDodgeTransparency(true);
-        // Reset combo on dodge
-        this.comboStep = 0;
-        this.comboWindowTimer = 0;
-        this.attackInputQueued = false;
-      } else if ((this.input.isHeavyAttacking() || this.input.isHeavyAttackReady()) && this.stamina >= HEAVY_ATTACK_COST) {
-        this.anim.setState(AnimState.ATTACK_HEAVY);
-        this.consumeStamina(HEAVY_ATTACK_COST);
-        this.comboStep = 0;
-        this.comboWindowTimer = 0;
-        this.attackInputQueued = false;
-      } else if (this.attackInputQueued) {
-        this.attackInputQueued = false;
-        this.triggerComboStep();
-      } else if (isMoving) {
-        this.anim.setState(AnimState.RUN);
-      } else {
-        this.anim.setState(AnimState.IDLE);
+    // ── Blocking state machine ────────────────────────────────────────────
+    // Decay shield bash cooldown
+    if (this.shieldBashCooldown > 0) this.shieldBashCooldown -= delta;
+
+    // Dash attack countdown (I-frames during lunge)
+    if (this.dashAttackTimer > 0) {
+      this.dashAttackTimer -= delta;
+      if (this.dashAttackTimer <= 0) {
+        this.invincibilityTimer = 0;
       }
-    } else if (!isAttacking && current !== AnimState.DEATH) {
-      // Allow interrupting HIT with movement
-      if (isMoving) {
-        this.anim.setState(AnimState.RUN);
+    }
+
+    const wantsBlock = this.input.isBlocking() && !isAttacking && current !== AnimState.DEATH;
+
+    if (wantsBlock) {
+      // Drain stamina while blocking (handled in fixed update would drift, do it here)
+      if (this.stamina > 0) {
+        this.stamina = Math.max(0, this.stamina - BLOCK_DRAIN_RATE * delta);
+        this.staminaRegenPauseTimer = STAMINA_REGEN_PAUSE;
+      }
+      if (!this.isBlocking) {
+        this.isBlocking = true;
+        this.warrior.setShieldVisible(true);
+      }
+      // Shield bash check
+      if (this.input.isShieldBashing() && this.shieldBashCooldown <= 0 && this.stamina >= SHIELD_BASH_COST) {
+        this.consumeStamina(SHIELD_BASH_COST);
+        this.shieldBashCooldown = 0.8;
+        this.anim.setState(AnimState.SHIELD_BASH);
+        this.onShieldBash?.();
+      } else if (current !== AnimState.SHIELD_BASH) {
+        this.anim.setState(AnimState.BLOCK);
+      }
+    } else {
+      if (this.isBlocking) {
+        this.isBlocking = false;
+        this.warrior.setShieldVisible(false);
+      }
+
+      if (!isAttacking && current !== AnimState.DEATH && current !== AnimState.HIT) {
+        // ── Dash attack: LMB while pressing shift (isDodging) + moving ──────
+        const wantsDashAttack = (this.input.isDodging()) && isMoving;
+        if (wantsDashAttack && this.attackInputQueued && this.stamina >= DASH_ATTACK_COST) {
+          this.attackInputQueued = false;
+          this.consumeStamina(DASH_ATTACK_COST);
+          this.anim.setState(AnimState.DASH_ATTACK);
+          this.dashAttackTimer = this.DASH_ATTACK_DURATION;
+          this.invincibilityTimer = Math.max(this.invincibilityTimer, this.DASH_ATTACK_DURATION);
+          // Apply forward lunge impulse
+          const fwd = this.getForward();
+          const vel = this.body.linvel();
+          this.body.setLinvel(
+            { x: fwd.x * DASH_ATTACK_IMPULSE, y: vel.y, z: fwd.z * DASH_ATTACK_IMPULSE },
+            true,
+          );
+        } else if (this.input.isDodging() && this.stamina >= DODGE_COST) {
+          this.anim.setState(AnimState.DODGE);
+          this.consumeStamina(DODGE_COST);
+          // Grant dodge i-frames for the first 0.15 s
+          this.dodgeIFrameTimer = DODGE_IFRAME_DURATION;
+          this.invincibilityTimer = Math.max(this.invincibilityTimer, DODGE_IFRAME_DURATION);
+          this.warrior.setDodgeTransparency(true);
+          // Reset combo on dodge
+          this.comboStep = 0;
+          this.comboWindowTimer = 0;
+          this.attackInputQueued = false;
+        } else if ((this.input.isHeavyAttacking() || this.input.isHeavyAttackReady()) && this.stamina >= HEAVY_ATTACK_COST) {
+          this.anim.setState(AnimState.ATTACK_HEAVY);
+          this.consumeStamina(HEAVY_ATTACK_COST);
+          this.comboStep = 0;
+          this.comboWindowTimer = 0;
+          this.attackInputQueued = false;
+        } else if (this.attackInputQueued) {
+          this.attackInputQueued = false;
+          this.triggerComboStep();
+        } else if (isMoving) {
+          this.anim.setState(AnimState.RUN);
+        } else {
+          this.anim.setState(AnimState.IDLE);
+        }
+      } else if (!isAttacking && current !== AnimState.DEATH) {
+        // Allow interrupting HIT with movement
+        if (isMoving) {
+          this.anim.setState(AnimState.RUN);
+        }
       }
     }
 
@@ -314,6 +387,7 @@ export class PlayerController {
       AnimState.ATTACK_LIGHT_2,
       AnimState.ATTACK_LIGHT_3,
       AnimState.ATTACK_HEAVY,
+      AnimState.DASH_ATTACK,
     ].includes(this.anim.currentState);
   }
 
@@ -349,6 +423,11 @@ export class PlayerController {
         inWindow = progress >= 0.15 && progress <= 0.85;
         damage = 40;
         hitRadius = 1.6;
+        break;
+      case AnimState.DASH_ATTACK:
+        inWindow = progress >= 0.15 && progress <= 0.90;
+        damage = 22; // 1.5x light attack (base 15)
+        hitRadius = 2.2; // wider path
         break;
       default:
         return null;

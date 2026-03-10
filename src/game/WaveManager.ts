@@ -2,10 +2,21 @@ import * as THREE from 'three';
 import { PhysicsWorld } from '@/engine/PhysicsWorld';
 import { Enemy, EnemyType } from '@/game/Enemy';
 import { BossEnemy } from '@/game/BossEnemy';
+import { EnemyCommander } from '@/game/EnemyCommander';
 import { HUD } from '@/ui/HUD';
 
 // Radius at which enemies spawn around the arena edge
 const SPAWN_RADIUS = 20;
+
+export type WaveModifier = 'NONE' | 'BERSERKER' | 'ARMORED' | 'SWARM' | 'ELITE';
+
+const MODIFIER_LABELS: Record<WaveModifier, string> = {
+  NONE: '',
+  BERSERKER: '⚡ BERSERKER',
+  ARMORED: '🛡️ ARMORED',
+  SWARM: '🐝 SWARM',
+  ELITE: '👑 ELITE',
+};
 
 /**
  * Manages enemy waves: spawning, tracking kills, wave-banner display, and
@@ -21,12 +32,23 @@ export class WaveManager {
   // Boss enemy (one at a time, boss waves only)
   private _activeBoss: BossEnemy | null = null;
 
+  // Commander enemies (wave 8+)
+  private readonly activeCommanders: EnemyCommander[] = [];
+
   private _currentWave = 0;
   private _totalKills = 0;
 
   // Inter-wave countdown (-ve means wave is active)
   private waveCountdown = 0;
   private waveStarted = false;
+
+  // Rest period tracking (every 5 waves)
+  private isRestPeriod = false;
+  private restTimer = 0;
+  private readonly REST_DURATION = 5.0;
+
+  // Current wave modifier
+  currentModifier: WaveModifier = 'NONE';
 
   // DOM banner element
   private readonly bannerEl: HTMLElement;
@@ -79,6 +101,7 @@ export class WaveManager {
   get currentWave(): number { return this._currentWave; }
   get totalKills(): number { return this._totalKills; }
   get activeBoss(): BossEnemy | null { return this._activeBoss; }
+  get commanders(): readonly EnemyCommander[] { return this.activeCommanders; }
 
   /** Return a read-only view of active enemies (used by CombatSystem). */
   get enemies(): readonly Enemy[] { return this.activeEnemies; }
@@ -103,6 +126,9 @@ export class WaveManager {
       enemy.fixedUpdate(playerPos);
     }
     this._activeBoss?.fixedUpdate(playerPos);
+    for (const commander of this.activeCommanders) {
+      if (!commander.isDead) commander.fixedUpdate(playerPos);
+    }
   }
 
   /**
@@ -110,6 +136,16 @@ export class WaveManager {
    * Handles inter-wave countdown, enemy updates, and kill detection.
    */
   update(delta: number, playerPos: THREE.Vector3): void {
+    // ── Rest period ───────────────────────────────────────────────────────
+    if (this.isRestPeriod) {
+      this.restTimer -= delta;
+      if (this.restTimer <= 0) {
+        this.isRestPeriod = false;
+        this.beginInterWave();
+      }
+      return;
+    }
+
     // ── Inter-wave countdown ──────────────────────────────────────────────
     if (!this.waveStarted) {
       this.waveCountdown -= delta;
@@ -127,6 +163,11 @@ export class WaveManager {
     // ── Update boss ───────────────────────────────────────────────────────
     if (this._activeBoss && !this._activeBoss.isDead) {
       this._activeBoss.update(delta, playerPos);
+    }
+
+    // ── Update commanders ─────────────────────────────────────────────────
+    for (const commander of this.activeCommanders) {
+      if (!commander.isDead) commander.update(delta, playerPos);
     }
 
     // ── Collect freshly-dead enemies ──────────────────────────────────────
@@ -147,13 +188,25 @@ export class WaveManager {
       killedThisFrame++;
     }
 
+    // Commander death cleanup
+    for (let i = this.activeCommanders.length - 1; i >= 0; i--) {
+      const cmd = this.activeCommanders[i]!;
+      if (cmd.isDead) {
+        cmd.dispose(this.physics);
+        this.activeCommanders.splice(i, 1);
+        killedThisFrame++;
+      }
+    }
+
     if (killedThisFrame > 0) {
       this._totalKills += killedThisFrame;
       this.hud.updateKills(this._totalKills);
     }
 
     // ── Check wave completion ─────────────────────────────────────────────
-    const allDead = this.activeEnemies.length === 0 && this._activeBoss === null;
+    const allDead = this.activeEnemies.length === 0
+      && this._activeBoss === null
+      && this.activeCommanders.length === 0;
     if (this.waveStarted && allDead) {
       if (!this.waveClearedFired) {
         this.waveClearedFired = true;
@@ -164,8 +217,20 @@ export class WaveManager {
 
   /** Called from main.ts to start the next wave (after skill picker etc.). */
   startNextWave(): void {
+    // Every 5th wave (after wave 5) triggers a rest period first
+    const nextWave = this._currentWave + 1;
+    if (nextWave > 1 && (nextWave - 1) % 5 === 0) {
+      this.isRestPeriod = true;
+      this.restTimer = this.REST_DURATION;
+      this.showBanner('PREPARE YOURSELF...', this.REST_DURATION, false);
+      this.onRestPeriod?.();
+      return;
+    }
     this.beginInterWave();
   }
+
+  /** Optional callback fired when a rest period starts. */
+  onRestPeriod: (() => void) | null = null;
 
   // ── Private ───────────────────────────────────────────────────────────────
 
@@ -176,11 +241,28 @@ export class WaveManager {
 
     const nextWave = this._currentWave + 1;
     const isBoss = nextWave % 5 === 0 && nextWave > 0;
+    // Roll wave modifier for wave 5+
+    if (nextWave >= 5 && !isBoss) {
+      this.currentModifier = this.rollModifier();
+    } else {
+      this.currentModifier = 'NONE';
+    }
+
     if (isBoss) {
       this.showBanner(`⚔ BOSS WAVE  ${nextWave} ⚔`, 2.4, true);
     } else {
-      this.showBanner(`Wave  ${nextWave}`, 2.4, false);
+      const modLabel = this.currentModifier !== 'NONE' ? `\n${MODIFIER_LABELS[this.currentModifier]}` : '';
+      this.showBanner(`Wave  ${nextWave}${modLabel}`, 2.4, false);
     }
+  }
+
+  private rollModifier(): WaveModifier {
+    const r = Math.random();
+    if (r < 0.25) return 'BERSERKER';
+    if (r < 0.50) return 'ARMORED';
+    if (r < 0.75) return 'SWARM';
+    if (r < 0.88) return 'ELITE';
+    return 'NONE'; // ~12% chance for a clear wave
   }
 
   private startWave(): void {
@@ -209,7 +291,12 @@ export class WaveManager {
     }
 
     // ── Normal wave ────────────────────────────────────────────────────────
-    const count = Math.min(2 + this._currentWave * 2, 15);
+    const mod = this.currentModifier;
+
+    // Base count (SWARM doubles, ELITE halves)
+    let count = Math.min(2 + this._currentWave * 2, 15);
+    if (mod === 'SWARM') count = Math.min(count * 2, 24);
+    else if (mod === 'ELITE') count = Math.max(1, Math.floor(count / 2));
 
     // Tally counts per type for composition string
     const typeCounts: Partial<Record<EnemyType, number>> = {};
@@ -224,12 +311,37 @@ export class WaveManager {
       typeCounts[type] = (typeCounts[type] ?? 0) + 1;
 
       const enemy = new Enemy(this.scene, this.physics, sx, sz, type);
+      // Apply wave modifier stats
+      if (mod === 'BERSERKER') {
+        enemy.applyModifier(1.5, 0.7); // 50% speed, -30% HP
+      } else if (mod === 'ARMORED') {
+        enemy.applyModifier(0.8, 1.5); // -20% speed, +50% HP
+      } else if (mod === 'SWARM') {
+        enemy.applyModifier(1.0, 0.5, 0.6); // half HP, 0.6 scale
+      } else if (mod === 'ELITE') {
+        enemy.applyModifier(1.0, 2.0); // 2x HP
+      }
       this.activeEnemies.push(enemy);
 
       // Trigger spawn VFX
       if (this.onEnemySpawn) {
         const pos = new THREE.Vector3(sx, 0, sz);
         this.onEnemySpawn(pos);
+      }
+    }
+
+    // ── Spawn Commander (wave 8+) ─────────────────────────────────────────
+    if (this._currentWave >= 8) {
+      const commanderCount = this._currentWave >= 15 ? 2 : 1;
+      for (let c = 0; c < commanderCount; c++) {
+        const angle = (c / commanderCount) * Math.PI * 2 + Math.random();
+        const sx = Math.cos(angle) * (SPAWN_RADIUS - 2);
+        const sz = Math.sin(angle) * (SPAWN_RADIUS - 2);
+        const commander = new EnemyCommander(this.scene, this.physics, sx, sz);
+        this.activeCommanders.push(commander);
+        if (this.onEnemySpawn) {
+          this.onEnemySpawn(new THREE.Vector3(sx, 0, sz));
+        }
       }
     }
 
@@ -243,6 +355,9 @@ export class WaveManager {
     };
     for (const [type, cnt] of Object.entries(typeCounts) as Array<[EnemyType, number]>) {
       parts.push(`${cnt} ${typeLabel[type]}${cnt > 1 ? 's' : ''}`);
+    }
+    if (this.activeCommanders.length > 0) {
+      parts.push(`${this.activeCommanders.length} Commander${this.activeCommanders.length > 1 ? 's' : ''}`);
     }
     this.lastComposition = parts.join(' + ');
   }

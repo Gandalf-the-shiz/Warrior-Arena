@@ -10,6 +10,9 @@ export enum AnimState {
   ATTACK_LIGHT_2 = 'ATTACK_LIGHT_2',
   ATTACK_LIGHT_3 = 'ATTACK_LIGHT_3',
   ATTACK_HEAVY = 'ATTACK_HEAVY',
+  DASH_ATTACK = 'DASH_ATTACK',
+  BLOCK = 'BLOCK',
+  SHIELD_BASH = 'SHIELD_BASH',
   HIT = 'HIT',
   DEATH = 'DEATH',
 }
@@ -28,6 +31,9 @@ const STATE_CONFIG: Record<AnimState, StateConfig> = {
   [AnimState.ATTACK_LIGHT_2]: { duration: 0.35, loop: false },
   [AnimState.ATTACK_LIGHT_3]: { duration: 0.55, loop: false },
   [AnimState.ATTACK_HEAVY]:   { duration: 0.75, loop: false },
+  [AnimState.DASH_ATTACK]:    { duration: 0.45, loop: false },
+  [AnimState.BLOCK]:          { duration: Infinity, loop: true },
+  [AnimState.SHIELD_BASH]:    { duration: 0.35, loop: false },
   [AnimState.HIT]:            { duration: 0.3,  loop: false },
   [AnimState.DEATH]:          { duration: 1.2,  loop: false },
 };
@@ -109,6 +115,15 @@ export class AnimationStateMachine {
         break;
       case AnimState.ATTACK_HEAVY:
         this.animateAttackHeavy(t, cfg.duration);
+        break;
+      case AnimState.DASH_ATTACK:
+        this.animateDashAttack(t, cfg.duration);
+        break;
+      case AnimState.BLOCK:
+        this.animateBlock(time);
+        break;
+      case AnimState.SHIELD_BASH:
+        this.animateShieldBash(t, cfg.duration);
         break;
       case AnimState.HIT:
         this.animateHit(t, cfg.duration);
@@ -333,6 +348,60 @@ export class AnimationStateMachine {
       torsoGroup.position.y    = 0.05 - 0.5 - pp * 0.3;
     }
 
+    torsoGroup.scale.set(1, 1, 1);
+  }
+
+  // ── Dash Attack ────────────────────────────────────────────────────────
+  // Forward lunge: sword thrust straight ahead
+
+  private animateDashAttack(t: number, dur: number): void {
+    const { torsoGroup, rightArmGroup, swordGroup } = this.model;
+
+    const p = t / dur;
+    // Forward lean during lunge, arm thrust forward
+    torsoGroup.rotation.x = Math.sin(p * Math.PI) * 0.45;
+    rightArmGroup.rotation.x = -0.8 + p * 0.8;
+    swordGroup.rotation.x = -0.6 + p * 0.6;
+    swordGroup.rotation.z = 0;
+    torsoGroup.rotation.y = 0;
+    torsoGroup.scale.set(1, 1, 1);
+  }
+
+  // ── Block ──────────────────────────────────────────────────────────────
+  // Left arm raised across chest — shield guard pose
+
+  private animateBlock(time: number): void {
+    const { torsoGroup, leftArmGroup, rightArmGroup, swordGroup } = this.model;
+
+    // Slight crouch — torso lowered
+    torsoGroup.position.y = 0.0 + Math.sin(time * 1.2) * 0.005;
+    torsoGroup.rotation.x = 0.08; // slight forward lean
+
+    // Shield arm: raised diagonally across chest
+    leftArmGroup.rotation.x = -1.1;
+    leftArmGroup.rotation.z = 0.5;
+
+    // Sword arm relaxed at side
+    rightArmGroup.rotation.x = 0.15;
+    rightArmGroup.rotation.z = -0.1;
+    swordGroup.rotation.x = 0.0;
+    swordGroup.rotation.z = 0.0;
+
+    torsoGroup.scale.set(1, 1, 1);
+  }
+
+  // ── Shield Bash ────────────────────────────────────────────────────────
+  // Left arm thrusts forward in a shield bash
+
+  private animateShieldBash(t: number, dur: number): void {
+    const { torsoGroup, leftArmGroup } = this.model;
+
+    const p = t / dur;
+    // Forward thrust — push arm out and pull back
+    const swing = Math.sin(p * Math.PI);
+    leftArmGroup.rotation.x = -1.1 + swing * 0.8;
+    leftArmGroup.rotation.z = 0.5 - swing * 0.2;
+    torsoGroup.rotation.x = 0.08 + swing * 0.15;
     torsoGroup.scale.set(1, 1, 1);
   }
 }
