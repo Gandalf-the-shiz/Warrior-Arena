@@ -330,9 +330,9 @@ export class VFXManager {
         width: `${size}px`,
         height: `${size}px`,
         borderRadius: '50% 40% 60% 45%',
-        background: `rgba(${100 + Math.random() * 60 | 0}, 0, 0, ${opacity.toFixed(2)})`,
+        background: `rgba(${Math.floor(100 + Math.random() * 60)}, 0, 0, ${opacity.toFixed(2)})`,
         pointerEvents: 'none',
-        transform: `rotate(${Math.random() * 360 | 0}deg)`,
+        transform: `rotate(${Math.floor(Math.random() * 360)}deg)`,
         transition: `opacity ${SCREEN_BLOOD_LIFETIME.toFixed(1)}s ease-out`,
       });
       this.screenBloodContainer.appendChild(drop);

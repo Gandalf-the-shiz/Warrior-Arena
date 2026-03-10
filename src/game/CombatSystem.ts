@@ -144,23 +144,30 @@ export class CombatSystem {
       const actualDamage = Math.round(hitInfo.damage * player.getEffectiveDamageMultiplier());
       const enemyPosBefore = enemy.getPosition().clone();
 
-      enemy.takeDamage(actualDamage, knockbackDir);
-      styleMeter?.registerHit();
-      onEnemyHit?.();
-
       // Camera shake — heavy hit / kill shakes more
       const isHeavy = actualDamage >= HEAVY_DAMAGE_THRESHOLD;
       const isFinisher = player.anim.currentState === AnimState.ATTACK_LIGHT_3;
+
+      // If the DismembermentSystem is active and this hit would kill the enemy,
+      // mark it as dismembered BEFORE takeDamage() so that Enemy.enterDeadState()
+      // skips its built-in basic dismember(). DismembermentSystem takes full ownership.
+      if (dismemberment && actualDamage >= enemy.hp) {
+        enemy.dismembered = true;
+      }
+
+      enemy.takeDamage(actualDamage, knockbackDir);
+      styleMeter?.registerHit();
+      onEnemyHit?.();
 
       if (enemy.isDead) {
         onEnemyKilled?.(enemyPosBefore);
 
         // ── Dismemberment on kill ──────────────────────────────────────────
+        // When dismemberment system is present it takes over; otherwise
+        // Enemy.enterDeadState() already triggered the built-in fallback.
         if (dismemberment) {
           const attackType = isHeavy || isFinisher ? AttackType.HEAVY : AttackType.LIGHT;
           dismemberment.onEnemyKilled(enemy, knockbackDir, attackType);
-        } else {
-          // Fallback: basic built-in dismember (already triggered via enterDeadState)
         }
 
         vfx.shakeCamera(KILL_SHAKE_INTENSITY, KILL_SHAKE_DURATION);

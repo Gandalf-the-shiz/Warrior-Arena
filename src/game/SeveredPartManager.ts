@@ -197,10 +197,9 @@ export class SeveredPartManager {
     });
 
     // Remove Rapier body from the physics world
-    try {
+    // Guard against the body already being removed (e.g. by a previous cleanup pass)
+    if (this.physics.world.getRigidBody(part.body.handle)) {
       this.physics.world.removeRigidBody(part.body);
-    } catch (_e) {
-      // Body may already have been removed
     }
 
     part.active = false;

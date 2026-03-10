@@ -150,6 +150,13 @@ export class FinisherSystem {
     // 9999 damage = guaranteed kill
     const killPos = target.getPosition().clone();
     const knockback = dir.clone().negate();
+
+    // If DismembermentSystem is wired, prevent the built-in basic dismember()
+    // from running inside enterDeadState() so we have full ownership of the limbs.
+    if (this.dismemberment) {
+      target.dismembered = true;
+    }
+
     target.takeDamage(9999, knockback);
 
     // ── Finisher dismemberment (always spectacular) ────────────────────────

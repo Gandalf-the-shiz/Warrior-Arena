@@ -250,10 +250,11 @@ export class DismembermentSystem {
   /**
    * Adds a flat circular "stump" mesh at the sever location to simulate
    * exposed flesh/bone at the cut point.
+   * The geometry and material are disposed when the parent enemy group is
+   * eventually disposed by the existing Enemy.dispose() lifecycle.
    */
   private addStumpCap(parent: THREE.Object3D, worldPos: THREE.Vector3): void {
     const geo = new THREE.CircleGeometry(0.14, 8);
-    // Dispose geometry when done (stump is added to the enemy group which gets cleaned up)
     const mat = MAT_STUMP.clone();
     const cap = new THREE.Mesh(geo, mat);
 
