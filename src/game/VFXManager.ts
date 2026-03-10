@@ -18,6 +18,14 @@ const SPARK_COUNT = 10;
 const SPARK_POOL = 6;
 const SPARK_LIFETIME = 0.3;
 
+// Gore chunks (small physics-lite gore pieces on heavy dismemberment)
+const MAX_GORE_CHUNKS = 20;
+const GORE_CHUNK_LIFETIME = 5; // seconds
+
+// Screen blood splatter (DOM overlay droplets on close-range kills)
+const MAX_SCREEN_BLOOD_DROPS = 12;
+const SCREEN_BLOOD_LIFETIME = 1.2; // seconds
+
 // ── Interfaces ────────────────────────────────────────────────────────────────
 interface BloodBurst {
   points: THREE.Points;
@@ -66,10 +74,18 @@ interface KillStreakAura {
   angle: number; // orbit angle
 }
 
+interface GoreChunk {
+  mesh: THREE.Mesh;
+  velocity: THREE.Vector3;
+  age: number;
+  active: boolean;
+}
+
 /**
  * Manages all visual effects: blood splatter particles, persistent blood
  * decals on the ground, sword trail VFX, hit sparks, ground slam rings,
- * dodge afterimages, kill streak aura, and camera shake requests.
+ * dodge afterimages, kill streak aura, gore chunks, arterial spray,
+ * screen blood splatter, and camera shake requests.
  */
 export class VFXManager {
   private readonly bloodBursts: BloodBurst[] = [];
@@ -78,6 +94,12 @@ export class VFXManager {
   // Screen-edge blood flash overlay
   private readonly bloodFlashEl: HTMLElement;
   private bloodFlashOpacity = 0;
+
+  // Gore chunks (small physics-lite meat pieces on heavy dismemberment)
+  private readonly goreChunks: GoreChunk[] = [];
+
+  // Screen blood splatter container (DOM overlay)
+  private readonly screenBloodContainer: HTMLElement;
 
   // Sword trail
   private readonly swordTrail: SwordTrail;
@@ -130,12 +152,28 @@ export class VFXManager {
     });
     document.body.appendChild(this.bloodFlashEl);
 
+    // Screen blood splatter container (DOM overlay for close-range kills)
+    this.screenBloodContainer = document.createElement('div');
+    Object.assign(this.screenBloodContainer.style, {
+      position: 'fixed',
+      inset: '0',
+      pointerEvents: 'none',
+      zIndex: '48',
+      overflow: 'hidden',
+    });
+    document.body.appendChild(this.screenBloodContainer);
+
     // Sword trail mesh
     this.swordTrail = this.createSwordTrail();
 
     // Kill streak aura pool
     for (let i = 0; i < 20; i++) {
       this.auraParticles.push(this.createAuraParticle());
+    }
+
+    // Pre-create gore chunk pool
+    for (let i = 0; i < MAX_GORE_CHUNKS; i++) {
+      this.goreChunks.push(this.createGoreChunk());
     }
   }
 
@@ -183,6 +221,128 @@ export class VFXManager {
    */
   spawnBloodFlash(): void {
     this.bloodFlashOpacity = 1.0;
+  }
+
+  /**
+   * Spawn a directional arterial blood spray from a sever point.
+   * Simulates pulsing heartbeat with multiple quick bursts.
+   *
+   * @param position  World-space origin (stump location).
+   * @param direction Normalised direction of the spray.
+   * @param intensity Multiplier 0–1.5 (1 = default, 1.5 = finisher).
+   */
+  spawnArterialSpray(position: THREE.Vector3, direction: THREE.Vector3, intensity = 1.0): void {
+    // Spawn 2–3 blood bursts in rapid succession to simulate pulsing spray
+    const burstCount = Math.round(2 + intensity);
+    for (let b = 0; b < burstCount; b++) {
+      const burst = this.bloodBursts.find((bst) => !bst.active);
+      if (!burst) continue;
+
+      burst.active = true;
+      const posAttr = burst.points.geometry.attributes.position as THREE.BufferAttribute;
+      const speed = 5.0 + intensity * 2;
+
+      for (let i = 0; i < BLOOD_PARTICLE_COUNT; i++) {
+        posAttr.setXYZ(
+          i,
+          position.x + (Math.random() - 0.5) * 0.15,
+          position.y + (Math.random() - 0.5) * 0.15,
+          position.z + (Math.random() - 0.5) * 0.15,
+        );
+
+        // Arterial spray is more directional and faster than standard blood burst
+        const spread = 0.8 + b * 0.2; // later pulses spread more
+        burst.velocities[i * 3]!     = direction.x * speed + (Math.random() - 0.5) * spread;
+        burst.velocities[i * 3 + 1]! = Math.random() * 1.5 + 0.5 + direction.y * speed * 0.3;
+        burst.velocities[i * 3 + 2]! = direction.z * speed + (Math.random() - 0.5) * spread;
+        burst.ages[i]! = 0;
+      }
+
+      posAttr.needsUpdate = true;
+      (burst.points.material as THREE.PointsMaterial).opacity = 0.95;
+
+      // Leave extra decals on the ground
+      const numDecals = 2 + Math.floor(intensity * 2);
+      for (let i = 0; i < numDecals; i++) {
+        this.spawnDecal(
+          position.x + (Math.random() - 0.5) * 1.2,
+          position.z + (Math.random() - 0.5) * 1.2,
+        );
+      }
+    }
+  }
+
+  /**
+   * Spawn small physics-lite gore chunk meshes that bounce off the ground.
+   *
+   * @param position World-space origin.
+   * @param count    Number of chunks (default 3).
+   */
+  spawnGoreChunks(position: THREE.Vector3, count = 3): void {
+    const clampedCount = Math.min(count, 5);
+    let spawned = 0;
+    for (const chunk of this.goreChunks) {
+      if (spawned >= clampedCount) break;
+      if (chunk.active) continue;
+
+      chunk.active = true;
+      chunk.age = 0;
+      chunk.mesh.position.set(
+        position.x + (Math.random() - 0.5) * 0.3,
+        position.y + 0.1,
+        position.z + (Math.random() - 0.5) * 0.3,
+      );
+      chunk.mesh.visible = true;
+
+      // Random outward velocity with upward bounce
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 4;
+      chunk.velocity.set(
+        Math.cos(angle) * speed,
+        2 + Math.random() * 3,
+        Math.sin(angle) * speed,
+      );
+
+      spawned++;
+    }
+  }
+
+  /**
+   * Spawn blood droplets on the screen (DOM overlay) for close-range kills.
+   *
+   * @param intensity 0–1 scale; 1.0 = maximum splatter, 0.35 = light hit.
+   */
+  spawnScreenBlood(intensity: number): void {
+    const clampedIntensity = Math.min(1.0, Math.max(0, intensity));
+    const count = Math.round(clampedIntensity * MAX_SCREEN_BLOOD_DROPS);
+
+    for (let i = 0; i < count; i++) {
+      const drop = document.createElement('div');
+      const size = (4 + Math.random() * 18 * clampedIntensity) | 0;
+      const x = (Math.random() * 90 + 5) | 0;
+      const y = (Math.random() * 80 + 10) | 0;
+      const opacity = 0.55 + Math.random() * 0.45;
+
+      Object.assign(drop.style, {
+        position: 'absolute',
+        left: `${x}%`,
+        top: `${y}%`,
+        width: `${size}px`,
+        height: `${size}px`,
+        borderRadius: '50% 40% 60% 45%',
+        background: `rgba(${100 + Math.random() * 60 | 0}, 0, 0, ${opacity.toFixed(2)})`,
+        pointerEvents: 'none',
+        transform: `rotate(${Math.random() * 360 | 0}deg)`,
+        transition: `opacity ${SCREEN_BLOOD_LIFETIME.toFixed(1)}s ease-out`,
+      });
+      this.screenBloodContainer.appendChild(drop);
+
+      // Fade out
+      requestAnimationFrame(() => {
+        drop.style.opacity = '0';
+        setTimeout(() => drop.remove(), SCREEN_BLOOD_LIFETIME * 1000 + 100);
+      });
+    }
   }
 
   /**
@@ -340,6 +500,7 @@ export class VFXManager {
     this.updateGroundSlams(delta);
     this.updateHitFlashes(delta);
     this.updateAfterimages(delta);
+    this.updateGoreChunks(delta);
     if (playerPos) this.updateAura(delta, playerPos);
 
     // Decay kill streak timer
@@ -705,6 +866,66 @@ export class VFXManager {
       mat.size = this.killStreak >= 10 ? 0.18 : 0.12;
       mat.color.set(this.killStreak >= 10 ? 0xffff00 : 0xff6600);
       idx++;
+    }
+  }
+
+  private createGoreChunk(): GoreChunk {
+    // Small irregular box with dark red gore material
+    const w = 0.06 + Math.random() * 0.10;
+    const h = 0.06 + Math.random() * 0.08;
+    const d = 0.06 + Math.random() * 0.10;
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(0.35 + Math.random() * 0.15, 0, 0),
+      roughness: 0.9,
+      metalness: 0.0,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.visible = false;
+    this.scene.add(mesh);
+    return { mesh, velocity: new THREE.Vector3(), age: 0, active: false };
+  }
+
+  private updateGoreChunks(delta: number): void {
+    for (const chunk of this.goreChunks) {
+      if (!chunk.active) continue;
+
+      chunk.age += delta;
+
+      // Simple physics: gravity + ground bounce
+      chunk.velocity.y -= GRAVITY * delta;
+      chunk.mesh.position.addScaledVector(chunk.velocity, delta);
+
+      // Bounce off ground
+      if (chunk.mesh.position.y < 0.04) {
+        chunk.mesh.position.y = 0.04;
+        chunk.velocity.y = Math.abs(chunk.velocity.y) * 0.4;
+        chunk.velocity.x *= 0.75;
+        chunk.velocity.z *= 0.75;
+        // Stamp a tiny blood decal when it hits
+        this.spawnDecal(chunk.mesh.position.x, chunk.mesh.position.z);
+      }
+
+      // Tumble rotation
+      chunk.mesh.rotation.x += delta * (2 + Math.random() * 3);
+      chunk.mesh.rotation.z += delta * (1.5 + Math.random() * 2);
+
+      // Fade opacity in the last 1.5 seconds
+      const fadeStart = GORE_CHUNK_LIFETIME - 1.5;
+      if (chunk.age > fadeStart) {
+        const opacity = 1.0 - (chunk.age - fadeStart) / 1.5;
+        const mat = chunk.mesh.material as THREE.MeshStandardMaterial;
+        mat.transparent = true;
+        mat.opacity = Math.max(0, opacity);
+      }
+
+      if (chunk.age >= GORE_CHUNK_LIFETIME) {
+        chunk.active = false;
+        chunk.mesh.visible = false;
+        const mat = chunk.mesh.material as THREE.MeshStandardMaterial;
+        mat.transparent = false;
+        mat.opacity = 1.0;
+      }
     }
   }
 }

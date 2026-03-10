@@ -6,6 +6,7 @@ import type { AudioManager } from '@/engine/AudioManager';
 import type { VFXManager } from '@/game/VFXManager';
 import type { CameraController } from '@/game/CameraController';
 import type { StyleMeter } from '@/game/StyleMeter';
+import type { DismembermentSystem } from '@/game/DismembermentSystem';
 
 // Threshold HP percentage to allow finisher
 const FINISHER_HP_THRESHOLD = 0.2;
@@ -42,6 +43,12 @@ export class FinisherSystem {
 
   /** Whether a finisher animation is currently playing. */
   get isExecuting(): boolean { return this._isExecuting; }
+
+  /**
+   * Optional dismemberment system. When set, every finisher will trigger
+   * spectacular multi-part dismemberment (100% chance, multiple parts).
+   */
+  dismemberment: DismembermentSystem | null = null;
 
   // DOM prompt elements for eligible enemies
   private readonly prompts = new Map<Enemy, FinisherPrompt>();
@@ -145,13 +152,19 @@ export class FinisherSystem {
     const knockback = dir.clone().negate();
     target.takeDamage(9999, knockback);
 
-    // Extra-large blood burst (2x)
-    const hitPos = killPos.clone().add(new THREE.Vector3(0, 0.8, 0));
-    this.vfx.spawnBlood(hitPos, dir);
-    this.vfx.spawnBlood(hitPos, dir.clone().applyEuler(new THREE.Euler(0, 0.8, 0)));
-
-    // Camera shake (bigger than normal)
-    this.vfx.shakeCamera(0.35, 0.4);
+    // ── Finisher dismemberment (always spectacular) ────────────────────────
+    if (this.dismemberment && target.isDead) {
+      this.dismemberment.onFinisher(target, dir);
+      // Extended camera shake for dismemberment
+      this.vfx.shakeCamera(0.45, 0.55);
+    } else {
+      // Extra-large blood burst (2x) — fallback when no dismemberment system
+      const hitPos = killPos.clone().add(new THREE.Vector3(0, 0.8, 0));
+      this.vfx.spawnBlood(hitPos, dir);
+      this.vfx.spawnBlood(hitPos, dir.clone().applyEuler(new THREE.Euler(0, 0.8, 0)));
+      // Camera shake (bigger than normal)
+      this.vfx.shakeCamera(0.35, 0.4);
+    }
 
     // Camera finisher zoom
     this.camera.setFinisherZoom(1);
