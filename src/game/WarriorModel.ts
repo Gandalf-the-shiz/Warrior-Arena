@@ -1,53 +1,65 @@
 import * as THREE from 'three';
 
-// ── Shared materials ────────────────────────────────────────────────────────
-const MAT_IRON = new THREE.MeshStandardMaterial({
+// ── Shared materials — MeshPhysicalMaterial for clearcoat sheen on armor ──────
+const MAT_IRON = new THREE.MeshPhysicalMaterial({
   color: 0xa0b0d0,        // polished bright steel blue
   metalness: 0.9,
   roughness: 0.15,
-  emissive: new THREE.Color(0x101830),
-  emissiveIntensity: 0.3, // faint blue steel sheen
+  clearcoat: 0.3,
+  clearcoatRoughness: 0.4,
+  emissive: new THREE.Color(0x101020),
+  emissiveIntensity: 0.2, // subtle blue-steel sheen in shadows
 });
 const MAT_SKIN = new THREE.MeshStandardMaterial({
   color: 0xc49a6c, // warm tan skin
   roughness: 0.7,
 });
-const MAT_HELMET = new THREE.MeshStandardMaterial({
+const MAT_HELMET = new THREE.MeshPhysicalMaterial({
   color: 0x909ab0,  // slightly darker than body, still bright
   metalness: 0.85,
   roughness: 0.2,
+  clearcoat: 0.3,
+  clearcoatRoughness: 0.4,
+  emissive: new THREE.Color(0x080818),
+  emissiveIntensity: 0.15,
 });
 const MAT_VISOR = new THREE.MeshStandardMaterial({
-  color: 0xaa2200,
-  emissive: new THREE.Color(0xaa2200),
-  emissiveIntensity: 3.0,
+  color: 0xcc2200,
+  emissive: new THREE.Color(0xcc2200),
+  emissiveIntensity: 4.0, // brighter visor glow
 });
-const MAT_PAULDRON = new THREE.MeshStandardMaterial({
+const MAT_PAULDRON = new THREE.MeshPhysicalMaterial({
   color: 0x8090b0,  // angular shoulder plates
   metalness: 0.85,
   roughness: 0.25,
+  clearcoat: 0.4,
+  clearcoatRoughness: 0.3,
 });
-const MAT_GAUNTLET = new THREE.MeshStandardMaterial({
+const MAT_GAUNTLET = new THREE.MeshPhysicalMaterial({
   color: 0x7888a8,  // bright gauntlets
   metalness: 0.9,
   roughness: 0.15,
+  clearcoat: 0.3,
+  clearcoatRoughness: 0.4,
 });
 const MAT_BOOT = new THREE.MeshStandardMaterial({
   color: 0x888070,  // lighter leather/sabaton
   roughness: 0.6,
 });
 const MAT_CAPE = new THREE.MeshStandardMaterial({
-  color: 0xbb1515, // richer crimson
+  color: 0xcc1010, // deeper, richer crimson
   side: THREE.DoubleSide,
   transparent: true,
-  opacity: 0.88,
+  opacity: 0.90,
 });
-const MAT_BLADE = new THREE.MeshStandardMaterial({
-  color: 0x8899aa,
+const MAT_BLADE = new THREE.MeshPhysicalMaterial({
+  color: 0x9aabbb,
   metalness: 0.95,
-  roughness: 0.1,
-  emissive: new THREE.Color(0x6666ff),
-  emissiveIntensity: 1.5,
+  roughness: 0.08,
+  clearcoat: 0.5,
+  clearcoatRoughness: 0.2,
+  emissive: new THREE.Color(0x4466ff),
+  emissiveIntensity: 2.0, // enchanted sword glow — blue/white pulse
 });
 const MAT_GROOVE = new THREE.MeshStandardMaterial({
   color: 0x445566,
@@ -63,6 +75,7 @@ const MAT_GRIP = new THREE.MeshStandardMaterial({
   color: 0x4a3828, // leather
   roughness: 0.8,
 });
+
 
 function mkMesh(
   geo: THREE.BufferGeometry,

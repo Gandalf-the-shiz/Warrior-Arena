@@ -42,11 +42,13 @@ export class CameraController {
   // artifacts pushing the camera into a bad initial position.
   private static readonly COLLISION_GRACE_FRAMES = 10;
 
-  // Centered behind the player. Positive Z = behind player (player forward = +Z in local space).
+  // Camera sits behind the player. Negative Z = behind player when player faces +Z.
+  // Applying the yaw quaternion (player facing) rotates this offset into world space,
+  // placing the camera directly behind the warrior.
   // NOTE: OFFSET is mutated in-place by setDeathZoom(); readonly prevents reference reassignment only.
-  private readonly OFFSET = new THREE.Vector3(0, 2.5, 5.0);
-  private readonly BASE_OFFSET = new THREE.Vector3(0, 2.5, 5.0);
-  private readonly DEATH_OFFSET = new THREE.Vector3(0, 1.8, 2.5);
+  private readonly OFFSET = new THREE.Vector3(0, 2.5, -5.0);
+  private readonly BASE_OFFSET = new THREE.Vector3(0, 2.5, -5.0);
+  private readonly DEATH_OFFSET = new THREE.Vector3(0, 1.8, -2.5);
 
   constructor(
     private readonly camera: THREE.Camera,
@@ -92,7 +94,7 @@ export class CameraController {
    * t = 1 → finisher active, t = 0 → return to normal.
    */
   setFinisherZoom(t: number): void {
-    const FINISHER_OFFSET = new THREE.Vector3(0, 2.0, 3.5);
+    const FINISHER_OFFSET = new THREE.Vector3(0, 2.0, -3.5);
     this.OFFSET.lerpVectors(this.BASE_OFFSET, FINISHER_OFFSET, Math.min(1, Math.max(0, t)));
   }
 

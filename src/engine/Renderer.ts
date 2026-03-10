@@ -40,8 +40,8 @@ const VignetteShader = {
   name: 'VignetteShader',
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
-    offset:   { value: 0.75 },
-    darkness: { value: 0.7 },
+    offset:   { value: 0.7 },
+    darkness: { value: 0.8 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -65,7 +65,39 @@ const VignetteShader = {
   `,
 };
 
-// ── Color grading shader — warm shadows, slight desaturation, boosted contrast ──
+// ── Film Grain shader — subtle cinematic noise ────────────────────────────────
+const FilmGrainShader = {
+  name: 'FilmGrainShader',
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    time:     { value: 0.0 },
+    strength: { value: 0.025 }, // 2.5% grain
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float time;
+    uniform float strength;
+    varying vec2 vUv;
+    float rand(vec2 co) {
+      return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+    void main() {
+      vec4 color = texture2D(tDiffuse, vUv);
+      float grain = rand(vUv + fract(time * 0.07)) * 2.0 - 1.0;
+      color.rgb += grain * strength;
+      gl_FragColor = vec4(clamp(color.rgb, 0.0, 1.0), color.a);
+    }
+  `,
+};
+
+
 const ColorGradeShader = {
   name: 'ColorGradeShader',
   uniforms: {
@@ -114,11 +146,12 @@ export class Renderer {
 
   private readonly composer: EffectComposer;
   private readonly chromaticAberrationPass: ShaderPass;
+  private readonly filmGrainPass: ShaderPass;
 
   // Saved baseline scene state for weather restore
-  private readonly baseFogColor = new THREE.Color(0xd4c8a0);
-  private readonly baseFogDensity = 0.002;
-  private readonly baseBgColor = new THREE.Color(0x87ceeb);
+  private readonly baseFogColor = new THREE.Color(0xc8a080);
+  private readonly baseFogDensity = 0.003;
+  private readonly baseBgColor = new THREE.Color(0x1a1a3e);
 
   constructor(canvas: HTMLCanvasElement) {
     // ── WebGL Renderer ──────────────────────────────────────────────────────
@@ -141,9 +174,9 @@ export class Renderer {
 
     // ── Scene ───────────────────────────────────────────────────────────────
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87ceeb); // clear Mediterranean sky
-    // Golden atmospheric haze — makes distant tiers fade with depth
-    this.scene.fog = new THREE.FogExp2(0xd4c8a0, 0.002);
+    this.scene.background = new THREE.Color(0x1a1a3e); // deep dark blue (sky dome covers this)
+    // Warm amber atmospheric haze — evokes Skyrim-style golden dusk
+    this.scene.fog = new THREE.FogExp2(0xc8a080, 0.003);
 
     // ── Camera ──────────────────────────────────────────────────────────────
     this.camera = new THREE.PerspectiveCamera(
@@ -159,12 +192,12 @@ export class Renderer {
     // Base scene render pass
     this.composer.addPass(new RenderPass(this.scene, this.camera));
 
-    // Bloom — makes emissive runes, sword trail, and torch flames glow
+    // Bloom — lower threshold so torches, emissive sword, visor glow all pop
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.4,  // strength
-      0.5,  // radius
-      0.7,  // threshold
+      0.6,  // strength — stronger glow
+      0.6,  // radius
+      0.5,  // threshold — lower so more emissives bloom
     );
     this.composer.addPass(bloomPass);
 
@@ -183,6 +216,10 @@ export class Renderer {
       window.innerHeight,
     );
     this.composer.addPass(this.chromaticAberrationPass);
+
+    // Film grain — subtle cinematic noise texture
+    this.filmGrainPass = new ShaderPass(FilmGrainShader);
+    this.composer.addPass(this.filmGrainPass);
   }
 
   /**
@@ -230,7 +267,11 @@ export class Renderer {
   }
 
   /** Draw the scene from the active camera using the post-processing pipeline. */
-  render(): void {
+  render(time = 0): void {
+    // Animate film grain
+    if (this.filmGrainPass.uniforms['time']) {
+      this.filmGrainPass.uniforms['time'].value = time;
+    }
     this.composer.render();
   }
 }
