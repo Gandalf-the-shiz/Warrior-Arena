@@ -5,6 +5,7 @@ import { InputManager } from '@/engine/InputManager';
 import { WarriorModel } from '@/game/WarriorModel';
 import { AnimationStateMachine, AnimState } from '@/game/AnimationStateMachine';
 import type { SkillSystem } from '@/game/SkillSystem';
+import { ArmorDegradation } from '@/game/ArmorDegradation';
 
 const MOVE_SPEED = 7;
 const JUMP_IMPULSE = 8;
@@ -66,6 +67,9 @@ export class PlayerController {
   /** Optional skill system — set from main.ts after creation. */
   skillSystem: SkillSystem | null = null;
 
+  /** Armor degradation — tracks wear accumulated during the run. */
+  readonly armorDegradation: ArmorDegradation;
+
   /** Optional callback invoked when player shield-bashes (for VFX/audio). */
   onShieldBash: (() => void) | null = null;
 
@@ -121,6 +125,9 @@ export class PlayerController {
 
     // Expose as `mesh` for callers that reference it
     this.mesh = this.warrior.group;
+
+    // ── Armor degradation system ──────────────────────────────────────────
+    this.armorDegradation = new ArmorDegradation(this.warrior.armorMaterials);
 
     // ── Animation state machine ───────────────────────────────────────────
     this.anim = new AnimationStateMachine(this.warrior);
@@ -449,6 +456,9 @@ export class PlayerController {
 
     this.hp = Math.max(0, this.hp - finalDamage);
     this.invincibilityTimer = 0.5;
+
+    // Degrade armor on every hit — visible wear accumulates throughout the run
+    this.armorDegradation.onHit();
 
     if (this.hp <= 0) {
       this.isDead = true;

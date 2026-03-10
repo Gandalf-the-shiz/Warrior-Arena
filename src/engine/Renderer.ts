@@ -252,6 +252,47 @@ export class Renderer {
     (this.scene.background as THREE.Color).copy(bgColor ?? this.baseBgColor);
   }
 
+  /**
+   * Generate and apply a procedural environment map to the scene.
+   * Creates a warm arena cubemap (amber torchlight + dark stone) using PMREMGenerator.
+   * Calling this allows all MeshPhysicalMaterial objects to receive IBL reflections.
+   */
+  buildEnvironmentMap(): void {
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    pmrem.compileEquirectangularShader();
+
+    // Build a tiny equirectangular gradient DataTexture that encodes the
+    // warm arena lighting environment: amber/orange top half, dark stone bottom.
+    const W = 256, H = 128;
+    const BYTES_PER_PIXEL = 4; // RGBA
+    const data = new Uint8Array(W * H * BYTES_PER_PIXEL);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const idx = (y * W + x) * BYTES_PER_PIXEL;
+        // Normalised vertical position: 0 = bottom (floor/dark stone), 1 = top (sky/torchlight)
+        const t = 1.0 - y / H;
+        // Top: warm amber torch glow  (#c86428 → #7a3214)
+        // Bottom: dark cold stone     (#0a0808)
+        const r = Math.round(t * t * 200 + (1 - t) * 10);
+        const g = Math.round(t * t * 80  + (1 - t) * 8);
+        const b = Math.round(t * t * 20  + (1 - t) * 8);
+        data[idx]     = Math.min(255, r);
+        data[idx + 1] = Math.min(255, g);
+        data[idx + 2] = Math.min(255, b);
+        data[idx + 3] = 255;
+      }
+    }
+    const equirectTex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
+    equirectTex.mapping = THREE.EquirectangularReflectionMapping;
+    equirectTex.needsUpdate = true;
+
+    const envMap = pmrem.fromEquirectangular(equirectTex).texture;
+    this.scene.environment = envMap;
+
+    equirectTex.dispose();
+    pmrem.dispose();
+  }
+
   /** Resize renderer + camera to current window dimensions. */
   resize(): void {
     const w = window.innerWidth;

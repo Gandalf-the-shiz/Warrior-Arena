@@ -1,46 +1,15 @@
 import * as THREE from 'three';
+import type { ArmorMaterialSet } from '@/game/ArmorDegradation';
 
-// ── Shared materials — MeshPhysicalMaterial for clearcoat sheen on armor ──────
-const MAT_IRON = new THREE.MeshPhysicalMaterial({
-  color: 0xa0b0d0,        // polished bright steel blue
-  metalness: 0.9,
-  roughness: 0.15,
-  clearcoat: 0.3,
-  clearcoatRoughness: 0.4,
-  emissive: new THREE.Color(0x101020),
-  emissiveIntensity: 0.2, // subtle blue-steel sheen in shadows
-});
+// ── Non-degradable shared materials ──────────────────────────────────────────
 const MAT_SKIN = new THREE.MeshStandardMaterial({
   color: 0xc49a6c, // warm tan skin
   roughness: 0.7,
-});
-const MAT_HELMET = new THREE.MeshPhysicalMaterial({
-  color: 0x909ab0,  // slightly darker than body, still bright
-  metalness: 0.85,
-  roughness: 0.2,
-  clearcoat: 0.3,
-  clearcoatRoughness: 0.4,
-  emissive: new THREE.Color(0x080818),
-  emissiveIntensity: 0.15,
 });
 const MAT_VISOR = new THREE.MeshStandardMaterial({
   color: 0xcc2200,
   emissive: new THREE.Color(0xcc2200),
   emissiveIntensity: 4.0, // brighter visor glow
-});
-const MAT_PAULDRON = new THREE.MeshPhysicalMaterial({
-  color: 0x8090b0,  // angular shoulder plates
-  metalness: 0.85,
-  roughness: 0.25,
-  clearcoat: 0.4,
-  clearcoatRoughness: 0.3,
-});
-const MAT_GAUNTLET = new THREE.MeshPhysicalMaterial({
-  color: 0x7888a8,  // bright gauntlets
-  metalness: 0.9,
-  roughness: 0.15,
-  clearcoat: 0.3,
-  clearcoatRoughness: 0.4,
 });
 const MAT_BOOT = new THREE.MeshStandardMaterial({
   color: 0x888070,  // lighter leather/sabaton
@@ -114,12 +83,54 @@ export class WarriorModel {
   /** Shield mesh — visible only during BLOCK/SHIELD_BASH states. */
   readonly shieldGroup: THREE.Group;
 
+  /**
+   * Armor materials exposed for ArmorDegradation system.
+   * These are instance-level (not shared) so degradation only affects this warrior.
+   */
+  readonly armorMaterials: ArmorMaterialSet;
+
   // Cape geometry reference for vertex-wave animation
   private readonly capeGeo: THREE.BufferGeometry;
   private readonly capeBasePositions: Float32Array;
 
   constructor() {
     this.group = new THREE.Group();
+
+    // ── Instance armor materials (degradable) ───────────────────────────
+    const MAT_IRON = new THREE.MeshPhysicalMaterial({
+      color: 0xa0b0d0,
+      metalness: 0.90,
+      roughness: 0.15,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.4,
+      emissive: new THREE.Color(0x101020),
+      emissiveIntensity: 0.2,
+    });
+    const MAT_HELMET = new THREE.MeshPhysicalMaterial({
+      color: 0x909ab0,
+      metalness: 0.85,
+      roughness: 0.20,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.4,
+      emissive: new THREE.Color(0x080818),
+      emissiveIntensity: 0.15,
+    });
+    const MAT_PAULDRON = new THREE.MeshPhysicalMaterial({
+      color: 0x8090b0,
+      metalness: 0.85,
+      roughness: 0.25,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.3,
+    });
+    const MAT_GAUNTLET = new THREE.MeshPhysicalMaterial({
+      color: 0x7888a8,
+      metalness: 0.90,
+      roughness: 0.15,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.4,
+    });
+
+    this.armorMaterials = { iron: MAT_IRON, helmet: MAT_HELMET, pauldron: MAT_PAULDRON, gauntlet: MAT_GAUNTLET };
 
     // ── Torso ──────────────────────────────────────────────────────────────
     this.torsoGroup = new THREE.Group();
