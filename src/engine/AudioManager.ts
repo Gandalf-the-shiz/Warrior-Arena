@@ -531,6 +531,103 @@ export class AudioManager {
     nsrc.stop(t + 1.2);
   }
 
+  // ── Gore & Dismemberment sounds ───────────────────────────────────────────
+
+  /**
+   * Wet bone-crack + flesh-tear sound for dismemberment.
+   * Layers: noise burst (bone crack) + low thud + filtered noise (wet squelch).
+   */
+  playDismember(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    // Bone crack — sharp high-freq noise burst
+    this.shortNoiseBurst(ctx, 2200, 3, 0.35, 0.06);
+
+    // Low thud (impact body)
+    const thud = ctx.createOscillator();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(80, t);
+    thud.frequency.exponentialRampToValueAtTime(30, t + 0.12);
+    const tg = ctx.createGain();
+    tg.gain.setValueAtTime(0.4, t);
+    tg.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    thud.connect(tg).connect(this.masterGain!);
+    thud.start(t);
+    thud.stop(t + 0.18);
+
+    // Wet squelch — low-freq filtered noise
+    this.shortNoiseBurst(ctx, 300, 4, 0.28, 0.12);
+  }
+
+  /**
+   * Arterial spray hissing sound — directional pressurised fluid sound.
+   */
+  playArterialSpray(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const dur = 0.35;
+
+    const buf = this.makeNoiseBuffer(ctx, dur);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+
+    // Band-pass filter for hissing quality
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(1800, t);
+    bp.frequency.linearRampToValueAtTime(800, t + dur); // drops in pitch as pressure falls
+    bp.Q.value = 2.5;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.22, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    src.connect(bp).connect(gain).connect(this.masterGain!);
+    src.start(t);
+    src.stop(t + dur + 0.01);
+  }
+
+  /**
+   * Wet splat impact — called when gore chunks hit the ground.
+   */
+  playGoreChunk(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+
+    // Very short wet impact: lowpass-filtered noise burst
+    this.shortNoiseBurst(ctx, 250, 3, 0.18, 0.05);
+  }
+
+  /**
+   * Sharp skull crack + wet separation — for head dismemberment.
+   */
+  playHeadSplit(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    // Sharp crack at high frequency
+    this.shortNoiseBurst(ctx, 3500, 5, 0.4, 0.04);
+
+    // Resonant crack tone (bone)
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(550, t);
+    osc.frequency.exponentialRampToValueAtTime(200, t + 0.1);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.25, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    osc.connect(g).connect(this.masterGain!);
+    osc.start(t);
+    osc.stop(t + 0.15);
+
+    // Wet separation — low filtered noise
+    this.shortNoiseBurst(ctx, 400, 3.5, 0.22, 0.10);
+  }
+
   /** Finisher execution impact — sub bass + metallic ring + noise burst. */
   playFinisher(): void {
     const ctx = this.ensureStarted();

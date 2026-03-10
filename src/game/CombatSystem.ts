@@ -6,6 +6,7 @@ import { BossEnemy } from '@/game/BossEnemy';
 import { EnemyCommander } from '@/game/EnemyCommander';
 import { VFXManager } from '@/game/VFXManager';
 import { StyleMeter } from '@/game/StyleMeter';
+import { DismembermentSystem, AttackType } from '@/game/DismembermentSystem';
 
 // How far in front of the player the sword hitbox centre sits (world units)
 const HIT_RANGE_FORWARD = 2.0;
@@ -53,6 +54,8 @@ export class CombatSystem {
    * @param onHitVFX   Optional callback for spawning damage numbers at hit position.
    * @param onEnemyKilled Optional callback fired with position when a kill lands.
    * @param boss Optional boss enemy for the current wave.
+   * @param commanders Optional list of commander enemies.
+   * @param dismemberment Optional dismemberment system for gore-on-kill effects.
    */
   update(
     player: PlayerController,
@@ -65,10 +68,11 @@ export class CombatSystem {
     onEnemyKilled?: (position: THREE.Vector3) => void,
     boss?: BossEnemy | null,
     commanders?: readonly EnemyCommander[],
+    dismemberment?: DismembermentSystem,
   ): void {
     if (player.isDead) return;
 
-    this.processPlayerAttacks(player, enemies, vfx, onHitstop, styleMeter, onEnemyHit, onHitVFX, onEnemyKilled);
+    this.processPlayerAttacks(player, enemies, vfx, onHitstop, styleMeter, onEnemyHit, onHitVFX, onEnemyKilled, dismemberment);
     this.processEnemyAttacks(player, enemies, vfx, styleMeter);
     this.processNecromancerProjectiles(player, enemies);
 
@@ -95,6 +99,7 @@ export class CombatSystem {
     onEnemyHit?: () => void,
     onHitVFX?: (pos: THREE.Vector3, damage: number, isHeavy: boolean, isFinisher: boolean) => void,
     onEnemyKilled?: (position: THREE.Vector3) => void,
+    dismemberment?: DismembermentSystem,
   ): void {
     const hitInfo = player.getAttackHitInfo();
     const playerAttacking = hitInfo !== null;
@@ -139,12 +144,38 @@ export class CombatSystem {
       const actualDamage = Math.round(hitInfo.damage * player.getEffectiveDamageMultiplier());
       const enemyPosBefore = enemy.getPosition().clone();
 
+      // Camera shake — heavy hit / kill shakes more
+      const isHeavy = actualDamage >= HEAVY_DAMAGE_THRESHOLD;
+      const isFinisher = player.anim.currentState === AnimState.ATTACK_LIGHT_3;
+
+      // If the DismembermentSystem is active and this hit would kill the enemy,
+      // mark it as dismembered BEFORE takeDamage() so that Enemy.enterDeadState()
+      // skips its built-in basic dismember(). DismembermentSystem takes full ownership.
+      if (dismemberment && actualDamage >= enemy.hp) {
+        enemy.dismembered = true;
+      }
+
       enemy.takeDamage(actualDamage, knockbackDir);
       styleMeter?.registerHit();
       onEnemyHit?.();
 
       if (enemy.isDead) {
         onEnemyKilled?.(enemyPosBefore);
+
+        // ── Dismemberment on kill ──────────────────────────────────────────
+        // When dismemberment system is present it takes over; otherwise
+        // Enemy.enterDeadState() already triggered the built-in fallback.
+        if (dismemberment) {
+          const attackType = isHeavy || isFinisher ? AttackType.HEAVY : AttackType.LIGHT;
+          dismemberment.onEnemyKilled(enemy, knockbackDir, attackType);
+        }
+
+        vfx.shakeCamera(KILL_SHAKE_INTENSITY, KILL_SHAKE_DURATION);
+      } else {
+        vfx.shakeCamera(
+          isHeavy ? HEAVY_SHAKE_INTENSITY : LIGHT_SHAKE_INTENSITY,
+          isHeavy ? HEAVY_SHAKE_DURATION  : LIGHT_SHAKE_DURATION,
+        );
       }
 
       // VFX
@@ -156,19 +187,6 @@ export class CombatSystem {
 
       // Hit sparks
       vfx.spawnHitSparks(hitPos, knockbackDir);
-
-      // Camera shake — heavy hit / kill shakes more
-      const isHeavy = actualDamage >= HEAVY_DAMAGE_THRESHOLD;
-      const isFinisher = player.anim.currentState === AnimState.ATTACK_LIGHT_3;
-
-      if (enemy.isDead) {
-        vfx.shakeCamera(KILL_SHAKE_INTENSITY, KILL_SHAKE_DURATION);
-      } else {
-        vfx.shakeCamera(
-          isHeavy ? HEAVY_SHAKE_INTENSITY : LIGHT_SHAKE_INTENSITY,
-          isHeavy ? HEAVY_SHAKE_DURATION  : LIGHT_SHAKE_DURATION,
-        );
-      }
 
       // Ground slam ring for heavy attack
       if (isHeavy) {

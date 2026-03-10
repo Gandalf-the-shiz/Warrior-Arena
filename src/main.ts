@@ -39,6 +39,9 @@ import { LevelSystem } from '@/game/LevelSystem';
 import type { EnemyXPType } from '@/game/LevelSystem';
 import { LevelHUD } from '@/ui/LevelHUD';
 import { WeatherHUD } from '@/ui/WeatherHUD';
+// ── PR 2: Dismemberment & Gore systems ───────────────────────────────────────
+import { DismembermentSystem } from '@/game/DismembermentSystem';
+import { SeveredPartManager } from '@/game/SeveredPartManager';
 
 // ── Loading / error overlay helpers ───────────────────────────────────────
 function showLoading(): HTMLElement {
@@ -156,6 +159,13 @@ async function main(): Promise<void> {
   const levelSystem = new LevelSystem();
   const levelHUD    = new LevelHUD();
   const weatherHUD  = new WeatherHUD();
+
+  // ── PR 2: Dismemberment & Gore systems ────────────────────────────────────
+  const severedPartManager = new SeveredPartManager(renderer.scene, physics);
+  const dismemberment = new DismembermentSystem(severedPartManager, vfx, audio);
+
+  // Wire dismemberment into finisher system (100% chance on F-key execution)
+  finisher.dismemberment = dismemberment;
 
   // Wire SkillSystem into PlayerController
   player.skillSystem = skillSystem;
@@ -416,6 +426,7 @@ async function main(): Promise<void> {
         },
         waves.activeBoss,
         waves.commanders,
+        dismemberment,
       );
 
       // Sword trail — sample tip position every frame during attacks
@@ -426,6 +437,11 @@ async function main(): Promise<void> {
 
       styleMeter.update(gameDelta);
       vfx.update(gameDelta, player.getPosition());
+
+      // ── PR 2: Severed part lifecycle (physics sync + blood trails + despawn) ──
+      severedPartManager.update(gameDelta, (pos, dir) => {
+        vfx.spawnBlood(pos, dir);
+      });
 
       // ── Phase 2 system updates ─────────────────────────────────────────
       waveAnnouncer.update(delta);

@@ -204,6 +204,12 @@ export class Enemy {
   maxHp: number; // mutable for modifier scaling
   isDead = false;
 
+  /**
+   * Set to true when the DismembermentSystem has handled this enemy's death.
+   * When true, enterDeadState() skips the built-in fallback dismember() call.
+   */
+  dismembered = false;
+
   /** Enemy type — used by minimap and other UI systems. */
   readonly type: EnemyType;
 
@@ -544,6 +550,36 @@ export class Enemy {
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
+
+  /**
+   * Returns references to the enemy's body part groups.
+   * Used by DismembermentSystem to sever parts on kill.
+   */
+  getBodyParts(): {
+    head: THREE.Group;
+    leftArm: THREE.Group;
+    rightArm: THREE.Group;
+    leftLeg: THREE.Group;
+    rightLeg: THREE.Group;
+    torso: THREE.Group;
+  } {
+    return {
+      head:     this.headGroup,
+      leftArm:  this.leftArmGroup,
+      rightArm: this.rightArmGroup,
+      leftLeg:  this.leftLegGroup,
+      rightLeg: this.rightLegGroup,
+      torso:    this.torsoGroup,
+    };
+  }
+
+  /**
+   * Perform the built-in basic limb detachment (1–2 random limbs, fade over 4s).
+   * Called as a fallback when the DismembermentSystem does not handle this kill.
+   */
+  fallbackDismember(): void {
+    this.dismember();
+  }
 
   getPosition(): THREE.Vector3 {
     const p = this.body.translation();
@@ -986,7 +1022,12 @@ export class Enemy {
     this.stateTimer = 0;
     const vel = this.body.linvel();
     this.body.setLinvel({ x: vel.x * 0.3, y: vel.y, z: vel.z * 0.3 }, true);
-    this.dismember();
+    // Only call the built-in dismember() when an external DismembermentSystem
+    // has NOT already handled this death. If this.dismembered is true, the
+    // external system already took ownership of the limbs.
+    if (!this.dismembered) {
+      this.dismember();
+    }
   }
 
   /**
