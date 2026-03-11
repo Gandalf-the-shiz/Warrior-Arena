@@ -45,35 +45,51 @@ export class InputManager {
 
   // ── Public API ──────────────────────────────────────────────────────────
 
-  /** Normalised movement vector in the XZ plane, magnitude ≤ 1. */
-  getMovementVector(): { x: number; z: number } {
-    let x = 0;
-    let z = 0;
+  /**
+   * Semantic movement intent in the horizontal plane, magnitude ≤ 1.
+   *
+   *   moveX > 0  → intent to strafe right
+   *   moveX < 0  → intent to strafe left
+   *   moveY > 0  → intent to move forward
+   *   moveY < 0  → intent to move backward
+   *
+   * Keyboard and touch joystick are normalised to the same convention:
+   *   - W / joystick-up    → moveY = +1
+   *   - S / joystick-down  → moveY = -1
+   *   - D / joystick-right → moveX = +1
+   *   - A / joystick-left  → moveX = -1
+   *
+   * The joystick Y axis is inverted here (dy = -1 on screen-up → moveY = +1)
+   * so that all downstream code uses forward-positive semantics.
+   */
+  getMovementInput(): { moveX: number; moveY: number } {
+    let moveX = 0;
+    let moveY = 0;
 
     if (this.pointerLocked || !this.isTouchDevice()) {
-      if (this.keys['KeyA'] || this.keys['ArrowLeft']) x -= 1;
-      if (this.keys['KeyD'] || this.keys['ArrowRight']) x += 1;
-      if (this.keys['KeyW'] || this.keys['ArrowUp']) z -= 1;
-      if (this.keys['KeyS'] || this.keys['ArrowDown']) z += 1;
+      if (this.keys['KeyA'] || this.keys['ArrowLeft']) moveX -= 1;
+      if (this.keys['KeyD'] || this.keys['ArrowRight']) moveX += 1;
+      if (this.keys['KeyW'] || this.keys['ArrowUp']) moveY += 1;
+      if (this.keys['KeyS'] || this.keys['ArrowDown']) moveY -= 1;
     }
 
     // Virtual joystick overrides keyboard on touch devices.
     // joystick.dx: -1 = left, +1 = right (screen space, magnitude embedded).
     // joystick.dy: -1 = up on screen, +1 = down on screen.
-    // dy maps directly to z: up on screen (dy < 0) = forward (z < 0), matching W key.
+    // Negate dy so that thumb-up → positive forward intent.
     if (this.joystick.active) {
-      x = this.joystick.dx;
-      z = this.joystick.dy;
+      moveX = this.joystick.dx;
+      moveY = -this.joystick.dy;
     }
 
     // Normalise diagonal movement (keyboard may produce len > 1 on diagonals;
     // joystick vector has magnitude ≤ 1 so the branch is a no-op for touch input)
-    const len = Math.sqrt(x * x + z * z);
+    const len = Math.hypot(moveX, moveY);
     if (len > 1) {
-      x /= len;
-      z /= len;
+      moveX /= len;
+      moveY /= len;
     }
-    return { x, z };
+    return { moveX, moveY };
   }
 
   isJumping(): boolean {

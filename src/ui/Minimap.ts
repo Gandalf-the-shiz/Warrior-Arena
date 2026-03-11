@@ -17,7 +17,7 @@ const DOT_COLOR: Record<EnemyType, string> = {
 };
 
 /**
- * Minimap — a small radar-style canvas in the bottom-right corner.
+ * Minimap — a small radar-style canvas in the top-left corner.
  *
  * - Player is always centred, shown as a white arrow pointing "up"
  *   (the map rotates with the player so forward is always up).
@@ -35,8 +35,8 @@ export class Minimap {
     const container = document.createElement('div');
     Object.assign(container.style, {
       position: 'fixed',
-      bottom: '16px',
-      right: '16px',
+      top: '16px',
+      left: '16px',
       width: `${SIZE}px`,
       height: `${SIZE}px`,
       borderRadius: '50%',
