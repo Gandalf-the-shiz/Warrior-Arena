@@ -62,9 +62,11 @@ export class InputManager {
     }
 
     // Virtual joystick overrides keyboard on touch devices
+    // Note: screen Y goes DOWN, so pushing joystick UP gives negative deltaY.
+    // We negate deltaY so that "up on screen" maps to negative Z (forward in Three.js).
     if (this.joystickActive) {
       x = this.joystickDeltaX / this.JOYSTICK_RADIUS;
-      z = this.joystickDeltaY / this.JOYSTICK_RADIUS;
+      z = -this.joystickDeltaY / this.JOYSTICK_RADIUS;
     }
 
     // Normalise diagonal movement

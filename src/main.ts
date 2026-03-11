@@ -202,6 +202,9 @@ async function main(): Promise<void> {
   let skillPickerActive = false;
   waves.onWaveCleared = () => {
     if (player.isDead) return;
+    // Victory horn + crowd roar on wave clear
+    audio.playVictoryHorn();
+    audio.crowdRoar();
     skillPickerActive = true;
     loop.pause();
     skillSystem.onNewWave();
@@ -229,6 +232,13 @@ async function main(): Promise<void> {
   // Kill streak tracking for audio
   let killStreakCount = 0;
 
+  // ── Crowd audio system state tracking ─────────────────────────────────────
+  let timeSinceLastKill = 0;
+  let waveHasFirstHit = false;
+  let prevHpForGasp = player.hp;
+  let crowdGaspTriggered = false;
+  let hasCrowdBooed = false;
+
   // Show best scores on title screen
   titleScreen.showBestScores(scoreManager.getBest());
 
@@ -255,6 +265,8 @@ async function main(): Promise<void> {
   // ── Await user gesture on title screen, then start audio ──────────────
   await titleScreen.waitForStart();
   audio.resume();
+  // Start background crowd murmur
+  audio.crowdMurmur();
 
   let elapsed = 0;
 
@@ -330,6 +342,7 @@ async function main(): Promise<void> {
       waves.update(gameDelta, player.getPosition());
 
       // ── Phase 3: Finisher system ───────────────────────────────────────
+      const wasExecuting = finisher.isExecuting;
       finisher.update(
         gameDelta,
         player,
@@ -339,12 +352,21 @@ async function main(): Promise<void> {
         styleMeter,
         (pos) => { loot.spawnDrop(pos); },
       );
+      // Crowd screams when finisher starts
+      if (finisher.isExecuting && !wasExecuting) {
+        audio.crowdScream();
+      }
 
       // ── Audio triggers ────────────────────────────────────────────────
       const nowAttacking = player.isAttackingState();
       if (nowAttacking && !prevAttacking) {
         audio.playSlash();
         audio.playGrunt();
+        // First hit of wave triggers crowd roar
+        if (!waveHasFirstHit && waves.enemies.length > 0) {
+          waveHasFirstHit = true;
+          audio.crowdRoar();
+        }
       }
       prevAttacking = nowAttacking;
 
@@ -355,9 +377,18 @@ async function main(): Promise<void> {
       // Player took damage — screen flash + audio
       if (player.hp < prevPlayerHp) {
         audio.playPlayerHit();
+        audio.playArmorClank();
         screenEffects.flashDamage();
+        timeSinceLastKill = 0; // reset kill timer on damage taken
       }
       prevPlayerHp = player.hp;
+
+      // Crowd gasp when HP drops below 25% for the first time this run
+      if (!crowdGaspTriggered && player.hp / player.maxHp < 0.25 && prevHpForGasp / player.maxHp >= 0.25) {
+        audio.playCrowdGasp();
+        crowdGaspTriggered = true;
+      }
+      prevHpForGasp = player.hp;
 
       // Player died
       if (player.isDead && !prevPlayerDead) audio.playPlayerDeath();
@@ -369,6 +400,11 @@ async function main(): Promise<void> {
         audio.playWaveAnnounce();
         waveAnnouncer.announce(waves.currentWave, waves.getWaveComposition());
         prevWave = waves.currentWave;
+        // Reset per-wave crowd state
+        waveHasFirstHit = false;
+        timeSinceLastKill = 0;
+        hasCrowdBooed = false;
+        crowdGaspTriggered = false;
       }
 
       // Enemy killed this frame
@@ -424,8 +460,15 @@ async function main(): Promise<void> {
           arena.onEnemyKilled();
           player.armorDegradation.onEnemyKilled();
           vfx.onKill(player.getPosition());
-          if (killStreakCount === 5) { audio.playKillStreak5(); }
-          else if (killStreakCount === 10) { audio.playKillStreak10(); }
+          timeSinceLastKill = 0; // reset crowd-boo timer on kill
+          hasCrowdBooed = false; // allow boo to fire again if player slows down
+          if (killStreakCount === 5) {
+            audio.playKillStreak5();
+            audio.crowdChant();
+          } else if (killStreakCount === 10) {
+            audio.playKillStreak10();
+            audio.crowdChant();
+          }
         },
         waves.activeBoss,
         waves.commanders,
@@ -456,6 +499,18 @@ async function main(): Promise<void> {
       if (player.hp > prevPlayerHpForHeal) screenEffects.flashHeal();
       prevPlayerHpForHeal = player.hp;
 
+      // ── Screen effect triggers ─────────────────────────────────────────
+      // Speed lines during dash attack
+      if (player.anim.currentState === 'DASH_ATTACK' && !prevAttacking) {
+        screenEffects.triggerSpeedLines();
+      }
+      // Impact frame on heavy attack land (when hit fires during heavy)
+      if (player.anim.currentState === 'ATTACK_HEAVY' &&
+          player.anim.getStateProgress() >= 0.15 &&
+          player.anim.getStateProgress() <= 0.25 && nowAttacking && !prevAttacking) {
+        screenEffects.triggerImpactFrame();
+      }
+
       // ── Phase 3 system updates ──────────────────────────────────────────
       // Arena hazards
       hazards.update(gameDelta, player, waves.enemies);
@@ -466,6 +521,26 @@ async function main(): Promise<void> {
         () => { screenEffects.flashDamage(); }, // lightning flash
         (intensity, duration) => { vfx.shakeCamera(intensity, duration); },
       );
+      // Blood moon screen tint
+      screenEffects.setBloodMoon(weather.currentWeather === 'BLOOD_MOON');
+
+      // ── Crowd system update ─────────────────────────────────────────────
+      // Track time since last kill during active waves
+      if (waves.enemies.length > 0 && !player.isDead) {
+        timeSinceLastKill += gameDelta;
+        // Crowd boos once when 15s pass without a kill — flag resets on next kill
+        if (timeSinceLastKill >= 15 && !hasCrowdBooed) {
+          hasCrowdBooed = true;
+          audio.crowdBoo();
+        }
+      }
+      // Scale crowd intensity: proximity to enemies + kill streak + style rank
+      {
+        const RANK_CROWD: Record<StyleRank, number> = { D: 0, C: 0.1, B: 0.2, A: 0.35, S: 0.5 };
+        const streakBoost = Math.min(killStreakCount / 10, 0.4);
+        const crowdLevel = Math.min(1, nearFactor * 0.5 + streakBoost + (RANK_CROWD[styleMeter.rank] ?? 0));
+        audio.setCrowdIntensity(crowdLevel);
+      }
 
       // Boss health bar update
       if (activeBoss && !activeBoss.isDead) {

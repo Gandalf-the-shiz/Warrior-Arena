@@ -52,6 +52,16 @@ export class AnimationStateMachine {
   private readonly _q = new THREE.Quaternion();
   private readonly _e = new THREE.Euler();
 
+  // Smoothed/interpolated values for natural secondary motion
+  private _smoothTorsoY = 0.05;       // smoothed torso bob
+  private _smoothTorsoRotX = 0;       // smoothed torso forward lean
+  private _smoothTorsoRotZ = 0;       // smoothed torso side-tilt
+  private _smoothTorsoRotY = 0;       // smoothed hip rotation during run
+  private _smoothLeftArmX = 0;
+  private _smoothRightArmX = 0;
+  private _smoothLeftLegX = 0;
+  private _smoothRightLegX = 0;
+
   constructor(private readonly model: WarriorModel) {}
 
   get currentState(): AnimState {
@@ -96,10 +106,10 @@ export class AnimationStateMachine {
 
     switch (this.state) {
       case AnimState.IDLE:
-        this.animateIdle(time);
+        this.animateIdle(time, delta);
         break;
       case AnimState.RUN:
-        this.animateRun(time, speed);
+        this.animateRun(time, speed, delta);
         break;
       case AnimState.DODGE:
         this.animateDodge(t, cfg.duration);
@@ -145,69 +155,122 @@ export class AnimationStateMachine {
     }
   }
 
+  // ── Helpers ─────────────────────────────────────────────────────────────
+
+  private _lerp(a: number, b: number, t: number): number {
+    return a + (b - a) * t;
+  }
+
   // ── Idle ────────────────────────────────────────────────────────────────
 
-  private animateIdle(time: number): void {
+  private animateIdle(time: number, delta: number): void {
     const { torsoGroup, headGroup, leftArmGroup, rightArmGroup,
       leftLegGroup, rightLegGroup, swordGroup } = this.model;
 
-    // Gentle breathing — torso bobs up/down
-    torsoGroup.position.y = 0.05 + Math.sin(time * Math.PI) * 0.018;
+    const lerpRate = 1 - Math.exp(-12 * delta); // smooth exponential lerp (~12 rad/s settling)
 
-    // Head very slight sway
-    headGroup.rotation.z = Math.sin(time * 0.7) * 0.02;
+    // Breathing: chest rises/falls with slight shoulder movement
+    const breathCycle = Math.sin(time * Math.PI * 0.5); // ~0.5 Hz breath
+    const targetTorsoY = 0.05 + breathCycle * 0.015;
+    this._smoothTorsoY = this._lerp(this._smoothTorsoY, targetTorsoY, lerpRate);
+    torsoGroup.position.y = this._smoothTorsoY;
 
-    // Arms rest
-    leftArmGroup.rotation.x = Math.sin(time * 0.8) * 0.04;
-    rightArmGroup.rotation.x = -leftArmGroup.rotation.x;
+    // Very subtle weight shift: hips sway side to side
+    const hipSway = Math.sin(time * 0.4) * 0.012;
+    const targetTorsoZ = hipSway;
+    this._smoothTorsoRotZ = this._lerp(this._smoothTorsoRotZ, targetTorsoZ, lerpRate * 0.4);
+    torsoGroup.rotation.z = this._smoothTorsoRotZ;
 
-    // Legs straight
-    leftLegGroup.rotation.x = 0;
-    rightLegGroup.rotation.x = 0;
+    // Head: slight look-around oscillation
+    headGroup.rotation.z = Math.sin(time * 0.55) * 0.018;
+    headGroup.rotation.y = Math.sin(time * 0.3) * 0.04; // subtle glance left/right
 
-    // Weapon sway
-    swordGroup.rotation.z = Math.sin(time * 0.9) * 0.04;
-    swordGroup.rotation.x = 0.15 + Math.sin(time * 0.6) * 0.02;
+    // Arms: natural rest pose with slight breathing sway
+    const leftArmTarget = breathCycle * 0.03 + Math.sin(time * 0.65) * 0.025;
+    const rightArmTarget = -leftArmTarget + Math.sin(time * 0.55 + 1.0) * 0.015;
+    this._smoothLeftArmX = this._lerp(this._smoothLeftArmX, leftArmTarget, lerpRate * 0.5);
+    this._smoothRightArmX = this._lerp(this._smoothRightArmX, rightArmTarget, lerpRate * 0.5);
+    leftArmGroup.rotation.x = this._smoothLeftArmX;
+    rightArmGroup.rotation.x = this._smoothRightArmX;
+    // Slight natural elbow-out rest angle
+    leftArmGroup.rotation.z = -0.06 + Math.sin(time * 0.6) * 0.01;
+    rightArmGroup.rotation.z = 0.06 - Math.sin(time * 0.6) * 0.01;
 
-    // No torso lean
-    torsoGroup.rotation.x = 0;
-    torsoGroup.rotation.z = 0;
+    // Legs: very slight weight-shift foot settling
+    this._smoothLeftLegX = this._lerp(this._smoothLeftLegX, 0, lerpRate * 0.3);
+    this._smoothRightLegX = this._lerp(this._smoothRightLegX, 0, lerpRate * 0.3);
+    leftLegGroup.rotation.x = this._smoothLeftLegX;
+    rightLegGroup.rotation.x = this._smoothRightLegX;
+
+    // Weapon sway follows breathing
+    swordGroup.rotation.z = Math.sin(time * 0.75) * 0.04;
+    swordGroup.rotation.x = 0.15 + breathCycle * 0.018;
+
+    // Torso lean reset
+    this._smoothTorsoRotX = this._lerp(this._smoothTorsoRotX, 0, lerpRate * 0.5);
+    torsoGroup.rotation.x = this._smoothTorsoRotX;
+    this._smoothTorsoRotY = this._lerp(this._smoothTorsoRotY, 0, lerpRate * 0.4);
+    torsoGroup.rotation.y = this._smoothTorsoRotY;
   }
 
   // ── Run ─────────────────────────────────────────────────────────────────
 
-  private animateRun(time: number, speed: number): void {
+  private animateRun(time: number, speed: number, delta: number): void {
     const { torsoGroup, headGroup, leftArmGroup, rightArmGroup,
       leftLegGroup, rightLegGroup, swordGroup } = this.model;
 
+    const lerpRate = 1 - Math.exp(-12 * delta); // smooth exponential lerp (~12 rad/s settling)
     const freq = 8 * speed;            // gait cycles faster at higher speed
-    const legSwing = 0.55 * speed;     // ±degrees leg swing amplitude
-    const armSwing = 0.4 * speed;
+    const legSwing = 0.60 * speed;     // ±degrees leg swing amplitude
+    const armSwing = 0.45 * speed;
 
     const phase = time * freq;
 
-    // Alternate legs
-    leftLegGroup.rotation.x  =  Math.sin(phase) * legSwing;
-    rightLegGroup.rotation.x = -Math.sin(phase) * legSwing;
+    // Legs with slight knee-bend simulation: secondary harmonic adds knee flex
+    const leftLegTarget  =  Math.sin(phase) * legSwing + Math.sin(phase * 2) * 0.08 * speed;
+    const rightLegTarget = -Math.sin(phase) * legSwing - Math.sin(phase * 2) * 0.08 * speed;
+    this._smoothLeftLegX = this._lerp(this._smoothLeftLegX, leftLegTarget, lerpRate * 1.5);
+    this._smoothRightLegX = this._lerp(this._smoothRightLegX, rightLegTarget, lerpRate * 1.5);
+    leftLegGroup.rotation.x  = this._smoothLeftLegX;
+    rightLegGroup.rotation.x = this._smoothRightLegX;
 
-    // Arms pump opposite to legs
-    leftArmGroup.rotation.x  = -Math.sin(phase) * armSwing;
-    rightArmGroup.rotation.x =  Math.sin(phase) * armSwing;
+    // Arms pump opposite to legs, with elbow-bend offset on secondary harmonic
+    const leftArmTarget  = -Math.sin(phase) * armSwing - Math.sin(phase * 2) * 0.06 * speed;
+    const rightArmTarget =  Math.sin(phase) * armSwing + Math.sin(phase * 2) * 0.06 * speed;
+    this._smoothLeftArmX = this._lerp(this._smoothLeftArmX, leftArmTarget, lerpRate * 1.5);
+    this._smoothRightArmX = this._lerp(this._smoothRightArmX, rightArmTarget, lerpRate * 1.5);
+    leftArmGroup.rotation.x  = this._smoothLeftArmX;
+    rightArmGroup.rotation.x = this._smoothRightArmX;
+    leftArmGroup.rotation.z  = -0.06;
+    rightArmGroup.rotation.z =  0.06;
 
-    // Torso slight forward lean
-    torsoGroup.rotation.x = 0.09 * speed;
+    // Hip rotation: torso counter-swings against legs for natural gait
+    const hipRotTarget = Math.sin(phase + 0.5) * 0.12 * speed;
+    this._smoothTorsoRotY = this._lerp(this._smoothTorsoRotY, hipRotTarget, lerpRate * 1.2);
+    torsoGroup.rotation.y = this._smoothTorsoRotY;
 
-    // Body bob
-    torsoGroup.position.y = 0.05 + Math.abs(Math.sin(phase * 2)) * 0.04;
+    // Torso forward lean increases with speed
+    const leanTarget = 0.10 * speed;
+    this._smoothTorsoRotX = this._lerp(this._smoothTorsoRotX, leanTarget, lerpRate);
+    torsoGroup.rotation.x = this._smoothTorsoRotX;
 
-    // Head stays level
+    // Body bob — double the gait frequency (two bobs per stride cycle)
+    const targetTorsoY = 0.05 + Math.abs(Math.sin(phase)) * 0.04 * speed;
+    this._smoothTorsoY = this._lerp(this._smoothTorsoY, targetTorsoY, lerpRate * 1.5);
+    torsoGroup.position.y = this._smoothTorsoY;
+
+    // Head counter-rotates slightly to stay level
     headGroup.rotation.z = 0;
+    headGroup.rotation.y = -this._smoothTorsoRotY * 0.3;
 
-    // More vigorous weapon sway
-    swordGroup.rotation.x = 0.15 + Math.sin(phase * 0.5) * 0.12;
+    // Side-tilt resets
+    const sideTiltTarget = Math.sin(phase * 0.5) * 0.02 * speed;
+    this._smoothTorsoRotZ = this._lerp(this._smoothTorsoRotZ, sideTiltTarget, lerpRate);
+    torsoGroup.rotation.z = this._smoothTorsoRotZ;
+
+    // More vigorous weapon sway follows arm
+    swordGroup.rotation.x = 0.15 + Math.sin(phase) * 0.10 * speed;
     swordGroup.rotation.z = 0;
-
-    torsoGroup.rotation.z = 0;
   }
 
   // ── Dodge ───────────────────────────────────────────────────────────────
@@ -233,36 +296,49 @@ export class AnimationStateMachine {
   }
 
   // ── Attack Light 1 ──────────────────────────────────────────────────────
-  // Horizontal right-to-left slash
+  // Horizontal right-to-left slash with wind-up anticipation
 
   private animateAttackLight1(t: number, dur: number): void {
-    const { torsoGroup, rightArmGroup, swordGroup } = this.model;
+    const { torsoGroup, rightArmGroup, leftArmGroup, swordGroup } = this.model;
 
     const p = t / dur;
     const swing = Math.sin(p * Math.PI);
 
-    torsoGroup.rotation.y = -swing * 0.5;
-    rightArmGroup.rotation.z = -swing * 0.5;
+    // Wind-up anticipation in the first 20%: slight opposite lean before swinging
+    const anticipation = p < 0.2 ? Math.sin((p / 0.2) * Math.PI * 0.5) * 0.15 : 0;
+
+    torsoGroup.rotation.y = anticipation - swing * 0.5;
+    rightArmGroup.rotation.z = anticipation * 0.5 - swing * 0.5;
+    // Non-attacking arm pulls back for balance
+    leftArmGroup.rotation.z = -0.1 + swing * 0.2;
     swordGroup.rotation.z    = -swing * 0.6;
     swordGroup.rotation.x    = 0.15;
+
+    // Weight transfer: slight side lean during swing
+    torsoGroup.rotation.z = Math.sin(p * Math.PI) * -0.08;
 
     // Reset scale in case of carry-over from dodge
     torsoGroup.scale.set(1, 1, 1);
   }
 
   // ── Attack Light 2 ──────────────────────────────────────────────────────
-  // Diagonal left-to-right slash
+  // Diagonal left-to-right slash with follow-through
 
   private animateAttackLight2(t: number, dur: number): void {
-    const { torsoGroup, rightArmGroup, swordGroup } = this.model;
+    const { torsoGroup, rightArmGroup, leftArmGroup, swordGroup } = this.model;
 
     const p = t / dur;
     const swing = Math.sin(p * Math.PI);
 
     torsoGroup.rotation.y = swing * 0.5;
     rightArmGroup.rotation.z = swing * 0.4;
+    // Non-attacking arm reacts for balance
+    leftArmGroup.rotation.z = -0.08 - swing * 0.12;
     swordGroup.rotation.z    = swing * 0.5;
     swordGroup.rotation.x    = 0.15 - swing * 0.3;
+
+    // Weight transfer
+    torsoGroup.rotation.z = Math.sin(p * Math.PI) * 0.08;
 
     torsoGroup.scale.set(1, 1, 1);
   }

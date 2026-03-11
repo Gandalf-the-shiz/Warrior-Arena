@@ -243,6 +243,11 @@ export class WarriorModel {
     this.leftArmGroup = new THREE.Group();
     this.leftArmGroup.position.set(-0.44, 0.28, 0);
 
+    // Shoulder joint sphere — closes the visual gap between pauldron and upper arm
+    const leftShoulder = mkMesh(new THREE.SphereGeometry(0.09, 8, 6), MAT_PAULDRON);
+    leftShoulder.position.set(0, 0, 0);
+    this.leftArmGroup.add(leftShoulder);
+
     const leftUpper = mkMesh(new THREE.CylinderGeometry(0.08, 0.07, 0.56, 10), MAT_IRON);
     leftUpper.position.set(0, -0.28, 0);
     this.leftArmGroup.add(leftUpper);
@@ -293,6 +298,11 @@ export class WarriorModel {
     // ── Right arm ─────────────────────────────────────────────────────────
     this.rightArmGroup = new THREE.Group();
     this.rightArmGroup.position.set(0.44, 0.28, 0);
+
+    // Shoulder joint sphere — closes the visual gap between pauldron and upper arm
+    const rightShoulder = mkMesh(new THREE.SphereGeometry(0.09, 8, 6), MAT_PAULDRON);
+    rightShoulder.position.set(0, 0, 0);
+    this.rightArmGroup.add(rightShoulder);
 
     const rightUpper = mkMesh(new THREE.CylinderGeometry(0.08, 0.07, 0.56, 10), MAT_IRON);
     rightUpper.position.set(0, -0.28, 0);
@@ -380,10 +390,11 @@ export class WarriorModel {
     this.capeGroup = new THREE.Group();
     this.capeGroup.position.set(0, 0.32, -0.3);
 
-    this.capeGeo = new THREE.PlaneGeometry(0.55, 1.1, 4, 10);
+    // Wider (0.7) and longer (1.4) with 8×16 segments for smooth deformation
+    this.capeGeo = new THREE.PlaneGeometry(0.7, 1.4, 8, 16);
     const capeMesh = mkMesh(this.capeGeo, MAT_CAPE, false);
-    // Tilt top of cape forward slightly so it hangs from shoulders
-    capeMesh.rotation.x = 0.15;
+    // Tilt more steeply so cape drapes naturally behind the warrior
+    capeMesh.rotation.x = 0.35;
     this.capeGroup.add(capeMesh);
 
     // Store a copy of the initial positions for animation reference
@@ -443,23 +454,45 @@ export class WarriorModel {
   }
 
   /**
-   * Animate the cape with a gentle sine-wave vertex deformation.
-   * @param time  Elapsed time in seconds.
+   * Animate the cape with multi-frequency vertex deformation.
+   * @param time   Elapsed time in seconds.
+   * @param speed  Player movement speed scalar (0–1). Higher = more billowing.
    */
-  updateCape(time: number): void {
+  updateCape(time: number, speed = 0): void {
     const posAttr = this.capeGeo.attributes.position as THREE.BufferAttribute;
     const base = this.capeBasePositions;
     const count = posAttr.count;
 
+    // Cape height spans from top (tNorm=0) to bottom (tNorm=1)
+    // Use 1.4 for the new cape height
+    const capeHeight = 1.4;
+    const capeMidY = -capeHeight / 2; // pivot is at top edge
+
     for (let i = 0; i < count; i++) {
       const bx = base[i * 3]!;
       const by = base[i * 3 + 1]!;
-      // More wave amplitude toward the bottom of the cape
-      const tNorm = 1 - (by + 0.55) / 1.1; // 0 at top, 1 at bottom
-      const wave = Math.sin(time * 2.5 + by * 5 + bx * 2) * 0.05 * tNorm;
-      posAttr.setX(i, bx + wave);
+      const bz = base[i * 3 + 2]!;
+
+      // Progressive amplitude: bottom edge swings more than top
+      const tNorm = 1 - (by - capeMidY) / (-capeMidY * 2); // 0 at top, 1 at bottom
+      const tClamped = Math.max(0, Math.min(1, tNorm));
+
+      // Speed-responsive billowing: cape streams behind when running
+      const billow = 0.08 + speed * 0.22;
+
+      // Primary slow Z-axis billow (cloth flowing outward behind warrior)
+      const primaryZ = Math.sin(time * 1.8 + by * 2.5) * billow * tClamped;
+
+      // Secondary faster X ripple (side-to-side cloth wave)
+      const secondaryX = Math.sin(time * 3.5 + by * 4.0 + bx * 2.0) * 0.05 * tClamped;
+
+      // Tertiary fast flutter near bottom edge
+      const flutterX = Math.sin(time * 6.0 + bx * 3.5) * 0.03 * (tClamped * tClamped);
+
+      posAttr.setXYZ(i, bx + secondaryX + flutterX, by, bz + primaryZ);
     }
     posAttr.needsUpdate = true;
+    this.capeGeo.computeVertexNormals();
   }
 
   /**

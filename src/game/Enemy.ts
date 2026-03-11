@@ -1130,21 +1130,28 @@ export class Enemy {
   private animRun(speed: number): void {
     const t = this.animTime;
     const phase = t * 8 * Math.max(speed, 0.2);
-    this.leftLegGroup.rotation.x = Math.sin(phase) * 0.5 * speed;
-    this.rightLegGroup.rotation.x = -Math.sin(phase) * 0.5 * speed;
+    // Leg swing with secondary harmonic for knee-bend feel
+    this.leftLegGroup.rotation.x = Math.sin(phase) * 0.5 * speed + Math.sin(phase * 2) * 0.06 * speed;
+    this.rightLegGroup.rotation.x = -Math.sin(phase) * 0.5 * speed - Math.sin(phase * 2) * 0.06 * speed;
+    // Arms pump opposite with elbow offset
     this.leftArmGroup.rotation.x = -Math.sin(phase) * 0.35 * speed;
     this.rightArmGroup.rotation.x = Math.sin(phase) * 0.35 * speed;
-    this.torsoGroup.position.y = 0.1 + Math.abs(Math.sin(phase * 2)) * 0.04;
+    // Hip rotation (torso counter-swing)
+    this.torsoGroup.rotation.y = Math.sin(phase + 0.5) * 0.08 * speed;
+    this.torsoGroup.position.y = 0.1 + Math.abs(Math.sin(phase)) * 0.04 * speed;
     this.torsoGroup.rotation.x = 0.08 * speed;
     this.torsoGroup.rotation.z = 0;
     this.torsoGroup.scale.set(1, 1, 1);
   }
 
   private animAttackWindup(p: number): void {
-    // Raise weapon overhead menacingly
+    // Raise weapon overhead with anticipation lean-back before strike
+    const anticipation = p < 0.3 ? Math.sin((p / 0.3) * Math.PI * 0.5) * -0.12 : 0;
     this.rightArmGroup.rotation.x = -p * 1.5;
     this.weaponGroup.rotation.x = -p * 0.9;
-    this.torsoGroup.rotation.x = p * 0.18;
+    // Torso leans back first then forward
+    this.torsoGroup.rotation.x = anticipation + p * 0.18;
+    this.torsoGroup.rotation.y = p * 0.1;
     this.torsoGroup.scale.set(1, 1, 1);
   }
 

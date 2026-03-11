@@ -342,7 +342,7 @@ export class PlayerController {
     // ── Update animation ──────────────────────────────────────────────────
     const elapsed = performance.now() / 1000;
     this.anim.update(delta, elapsed, speed);
-    this.warrior.updateCape(elapsed);
+    this.warrior.updateCape(elapsed, speed);
 
     // ── Footstep dust ─────────────────────────────────────────────────────
     if (isMoving && this.isGrounded) {
