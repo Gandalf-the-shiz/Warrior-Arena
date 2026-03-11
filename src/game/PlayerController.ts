@@ -6,6 +6,7 @@ import { WarriorModel } from '@/game/WarriorModel';
 import { AnimationStateMachine, AnimState } from '@/game/AnimationStateMachine';
 import type { SkillSystem } from '@/game/SkillSystem';
 import { ArmorDegradation } from '@/game/ArmorDegradation';
+import { computeCameraRelativeMovement } from '@/utils/movementUtils';
 
 const MOVE_SPEED = 7;
 const JUMP_IMPULSE = 8;
@@ -168,24 +169,27 @@ export class PlayerController {
 
     this.checkGrounded();
 
-    const move = this.input.getMovementVector();
-    const hasMove = move.x !== 0 || move.z !== 0;
+    const { moveX, moveY } = this.input.getMovementInput();
+    const hasMove = Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001;
 
     if (hasMove) {
-      const cos = Math.cos(cameraYaw);
-      const sin = Math.sin(cameraYaw);
-      const worldX = move.x * cos - move.z * sin;
-      const worldZ = move.x * sin + move.z * cos;
+      // Derive world-space XZ direction from camera-relative intent.
+      // Uses camera yaw basis vectors; pitch is ignored for planar locomotion.
+      const world = computeCameraRelativeMovement(moveX, moveY, cameraYaw);
+      const len = Math.hypot(world.x, world.z);
+      const wx = len > 1 ? world.x / len : world.x;
+      const wz = len > 1 ? world.z / len : world.z;
 
       // Speed reductions: 50% while blocking, 0 during dash attack (handled separately)
       const speedMult = this.isBlocking ? 0.5 : 1.0;
       const vel = this.body.linvel();
       this.body.setLinvel(
-        { x: worldX * MOVE_SPEED * speedMult, y: vel.y, z: worldZ * MOVE_SPEED * speedMult },
+        { x: wx * MOVE_SPEED * speedMult, y: vel.y, z: wz * MOVE_SPEED * speedMult },
         true,
       );
 
-      const angle = Math.atan2(worldX, worldZ);
+      // Rotate character toward actual world movement direction
+      const angle = Math.atan2(wx, wz);
       this.targetRotation.setFromEuler(new THREE.Euler(0, angle, 0));
     } else {
       const vel = this.body.linvel();
@@ -238,8 +242,8 @@ export class PlayerController {
     }
 
     // ── Determine animation state ─────────────────────────────────────────
-    const move = this.input.getMovementVector();
-    const speed = Math.sqrt(move.x * move.x + move.z * move.z);
+    const { moveX: animMoveX, moveY: animMoveY } = this.input.getMovementInput();
+    const speed = Math.hypot(animMoveX, animMoveY);
     const isMoving = speed > 0.05;
 
     const current = this.anim.currentState;

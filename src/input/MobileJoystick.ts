@@ -14,17 +14,17 @@
  *   dx  :  -1 = left on screen,   +1 = right on screen.
  *   dy  :  -1 = up on screen,     +1 = down on screen.
  *
- * Caller (InputManager) maps these directly:
- *   move.x =  joystick.dx   →  world strafe
- *   move.z =  joystick.dy   →  negative = forward (matches keyboard W = -1)
+ * Caller (InputManager) maps these with a Y-inversion:
+ *   moveX =  joystick.dx   →  right intent
+ *   moveY = -joystick.dy   →  positive = forward (thumb up → forward)
  */
 export class MobileJoystick {
   /** Normalized X: −1 (left) → +1 (right). Magnitude embedded. */
   dx = 0;
   /**
    * Normalized Y in screen space: −1 = up on screen, +1 = down on screen.
-   * In InputManager this is passed through as-is (no negation) so that
-   * dy < 0 (thumb up) → move.z < 0 → forward, matching keyboard W.
+   * InputManager negates this value (moveY = -dy) so that thumb-up maps to
+   * positive forward intent.
    */
   dy = 0;
   /** Scalar 0–1 representing how far the knob is from center. */
@@ -152,7 +152,7 @@ export class MobileJoystick {
     // Normalize into [-1, 1] with magnitude ≤ 1
     const clampedDist = Math.min(dist, R);
     this.dx = offsetX / R;
-    this.dy = offsetY / R;       // dy < 0 = up on screen = forward in world (matches W key)
+    this.dy = offsetY / R;       // raw screen Y: dy < 0 = up on screen; InputManager negates this to forward
     this.magnitude = clampedDist / R;
     this.angle = Math.atan2(offsetY, offsetX);
   }
