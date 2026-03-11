@@ -401,6 +401,16 @@ export class VFXManager {
   }
 
   /**
+   * Spawn metallic sparks at `position` deflecting off surface `normal`.
+   * Convenience wrapper around spawnHitSparks for the PBR armor impact system.
+   * @param position  World position of the impact.
+   * @param normal    Surface normal at impact (sparks scatter away from this direction).
+   */
+  spawnSparks(position: THREE.Vector3, normal: THREE.Vector3): void {
+    this.spawnHitSparks(position, normal);
+  }
+
+  /**
    * Flash an enemy mesh white for one frame (hit feedback).
    */
   spawnHitFlash(mesh: THREE.Object3D): void {

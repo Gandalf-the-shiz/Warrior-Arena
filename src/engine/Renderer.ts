@@ -163,13 +163,15 @@ export class Renderer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
 
-    // Shadows
+    // Shadows — use VSMShadowMap for smooth, high-quality soft shadows on
+    // PBR armor surfaces; VSM avoids the "peter-panning" artifact of PCF at
+    // the cost of a tiny memory overhead.
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.VSMShadowMap;
 
-    // Colour grading — bright daylight look
+    // Colour grading — slightly higher exposure for polished PBR metals
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = 1.1;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     // ── Scene ───────────────────────────────────────────────────────────────
