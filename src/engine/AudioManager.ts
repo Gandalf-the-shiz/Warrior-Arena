@@ -41,6 +41,10 @@ export class AudioManager {
   // Flag so we only start the audio context once a user gesture fires
   private started = false;
 
+  // ── Crowd audio system ───────────────────────────────────────────────────
+  private crowdGain: GainNode | null = null;
+  private crowdIntensityLevel = 0; // 0-1 float
+
   // ── Unlock on first gesture ─────────────────────────────────────────────
   constructor() {
     const unlock = (): void => {
@@ -939,6 +943,217 @@ export class AudioManager {
       horn.connect(lp).connect(g).connect(this.masterGain!);
       horn.start(t + offset);
       horn.stop(t + offset + 0.38);
+    });
+  }
+
+  // ── Crowd Audio System ────────────────────────────────────────────────────
+
+  /**
+   * Set overall crowd intensity (0 = quiet murmur, 1 = full roar).
+   * Call every frame based on game state (kills, proximity, style rank).
+   */
+  setCrowdIntensity(level: number): void {
+    this.crowdIntensityLevel = Math.max(0, Math.min(1, level));
+    const ctx = this.ensureStarted();
+    if (!ctx || !this.crowdGain) return;
+    const vol = 0.02 + this.crowdIntensityLevel * 0.12;
+    this.crowdGain.gain.setTargetAtTime(vol, ctx.currentTime, 0.8);
+  }
+
+  /**
+   * Ensure the background crowd murmur loop is running.
+   * Starts a filtered pink noise loop that provides continuous ambient crowd noise.
+   */
+  crowdMurmur(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    // Only start once
+    if (this.crowdGain) return;
+
+    this.crowdGain = ctx.createGain();
+    this.crowdGain.gain.value = 0.025;
+    this.crowdGain.connect(this.masterGain!);
+
+    // Use a long looping noise buffer for the murmur background
+    this.startCrowdNoiseLoop(ctx);
+  }
+
+  private startCrowdNoiseLoop(ctx: AudioContext): void {
+    const dur = 4.0;
+    const buf = this.makeNoiseBuffer(ctx, dur);
+
+    // Low-pass filter for crowd murmur feel (< 600 Hz)
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 500;
+    lp.Q.value = 0.7;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.connect(lp).connect(this.crowdGain!);
+    src.start();
+  }
+
+  /** Triggered when warrior makes first contact with enemies in a wave. */
+  crowdRoar(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const dur = 1.5;
+
+    // Layered noise burst — filtered to simulate crowd frequencies
+    const buf = this.makeNoiseBuffer(ctx, dur);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 900;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.28, t + 0.2);     // quick swell
+    g.gain.setValueAtTime(0.25, t + dur * 0.5);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(lp).connect(g).connect(this.masterGain!);
+    src.start(t);
+    src.stop(t + dur + 0.01);
+
+    // Also raise persistent crowd intensity
+    if (this.crowdGain) {
+      this.crowdGain.gain.setTargetAtTime(0.10, t, 0.3);
+    }
+  }
+
+  /** Triggered during kill streaks (5+). Rhythmic percussive chant. */
+  crowdChant(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+
+    // Rhythmic chant: 4 hits at 0.5s intervals with descending pitches
+    const chantFreqs = [220, 220, 196, 220];
+    chantFreqs.forEach((freq, i) => {
+      const ot = t + i * 0.45;
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 800;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, ot);
+      g.gain.linearRampToValueAtTime(0.12, ot + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, ot + 0.4);
+      osc.connect(lp).connect(g).connect(this.masterGain!);
+      osc.start(ot);
+      osc.stop(ot + 0.42);
+    });
+  }
+
+  /** Triggered during finishers or dismemberment. Excited crowd screaming. */
+  crowdScream(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const dur = 1.2;
+
+    // High-freq noise filtered to mimic screaming crowd
+    const buf = this.makeNoiseBuffer(ctx, dur);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 2000;
+    bp.Q.value = 0.5;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.22, t + 0.08);
+    g.gain.setValueAtTime(0.20, t + dur * 0.4);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(bp).connect(g).connect(this.masterGain!);
+    src.start(t);
+    src.stop(t + dur + 0.01);
+  }
+
+  /** Triggered if no kills for 15+ seconds during active wave. */
+  crowdBoo(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const dur = 1.8;
+
+    const buf = this.makeNoiseBuffer(ctx, dur);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    // Very low freq filter for booing sound
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 350;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.15, t + 0.3);
+    g.gain.setValueAtTime(0.14, t + 1.2);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(lp).connect(g).connect(this.masterGain!);
+    src.start(t);
+    src.stop(t + dur + 0.01);
+  }
+
+  /** Metallic clank when warrior takes damage (layered with existing hit). */
+  playArmorClank(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    // Higher-pitched, sharper metallic impact
+    this.metalClang(ctx, [620, 820, 1100], 0.28, 0.35);
+    this.shortNoiseBurst(ctx, 1500, 4, 0.12, 0.04);
+  }
+
+  /** Triggered when player HP drops below 25% — crowd gasp. */
+  playCrowdGasp(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const dur = 0.6;
+
+    const buf = this.makeNoiseBuffer(ctx, dur);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(1500, t);
+    hp.frequency.linearRampToValueAtTime(400, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.18, t);
+    g.gain.linearRampToValueAtTime(0.001, t + dur);
+    src.connect(hp).connect(g).connect(this.masterGain!);
+    src.start(t);
+    src.stop(t + dur + 0.01);
+  }
+
+  /** Short victory horn blast — call when wave is cleared. */
+  playVictoryHorn(): void {
+    const ctx = this.ensureStarted();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    // G major fanfare: G3 → B3 → D4 → G4
+    const notes = [196.0 /* G3 */, 246.94 /* B3 */, 293.66 /* D4 */, 392.0 /* G4 */];
+    notes.forEach((freq, i) => {
+      const ot = t + i * 0.12;
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, ot);
+      osc.frequency.linearRampToValueAtTime(freq * 1.02, ot + 0.08);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2000;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, ot);
+      g.gain.linearRampToValueAtTime(0.38, ot + 0.04);
+      g.gain.setValueAtTime(0.35, ot + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.001, ot + 0.6);
+      osc.connect(lp).connect(g).connect(this.masterGain!);
+      osc.start(ot);
+      osc.stop(ot + 0.65);
     });
   }
 
