@@ -1,35 +1,51 @@
 /**
- * MobileJoystick — industry-standard 360° virtual joystick for touch devices.
+ * MobileJoystick — floating/dynamic 360° virtual joystick for touch devices.
  *
- * Design principles (mirroring Brawl Stars / Archero joystick behavior):
- * - Tracks a single touch by identifier (multi-touch safe)
- * - Clamps knob movement to circular base radius
- * - Outputs normalized direction vector (dx, dy) where magnitude encodes analog speed
- * - Dead zone prevents drift from accidental micro-touches
- * - Knob re-centers instantly on touch release (no CSS transition)
- * - passive:false + preventDefault() blocks scroll/zoom interference
+ * Design (mirrors Brawl Stars / Clash Royale joystick behaviour):
+ * - The joystick base FLOATS to wherever the player first touches within the zone.
+ * - This eliminates thumb-reach problems; the base always appears under the finger.
+ * - Single-touch tracking with multi-touch safety via touch identifier.
+ * - Circular knob clamping to base radius with analog magnitude output.
+ * - Dead zone prevents drift from micro-touches.
+ * - Base hides instantly on touch release; no CSS transition jitter.
+ * - passive:false + preventDefault() blocks scroll/zoom interference.
+ *
+ * Coordinate conventions (matches InputManager / PlayerController):
+ *   dx  :  -1 = left on screen,   +1 = right on screen.
+ *   dy  :  -1 = up on screen,     +1 = down on screen.
+ *
+ * Caller (InputManager) maps these directly:
+ *   move.x =  joystick.dx   →  world strafe
+ *   move.z =  joystick.dy   →  negative = forward (matches keyboard W = -1)
  */
 export class MobileJoystick {
-  /** Normalized X component: -1 (left) to +1 (right). Magnitude is embedded. */
+  /** Normalized X: −1 (left) → +1 (right). Magnitude embedded. */
   dx = 0;
   /**
-   * Normalized Y component in raw screen-space: negative = up on screen, positive = down.
-   * Caller must negate dy when converting to world-space forward (screen Y-down ≠ world Z-forward).
-   * Magnitude is embedded.
+   * Normalized Y in screen space: −1 = up on screen, +1 = down on screen.
+   * In InputManager this is passed through as-is (no negation) so that
+   * dy < 0 (thumb up) → move.z < 0 → forward, matching keyboard W.
    */
   dy = 0;
-  /** Scalar 0–1 representing how far the knob is from center (post-clamp). */
+  /** Scalar 0–1 representing how far the knob is from center. */
   magnitude = 0;
   /** Angle in radians from Math.atan2(dy, dx). */
   angle = 0;
 
   private activeTouchId: number | null = null;
+
+  /** Screen-pixel position of the floating base centre (set on touchstart). */
+  private baseCenterX = 0;
+  private baseCenterY = 0;
+
   private readonly zoneEl: HTMLElement;
   private readonly baseEl: HTMLElement;
   private readonly knobEl: HTMLElement;
 
-  /** Minimum pixel displacement before the joystick registers movement. */
-  private static readonly DEAD_ZONE_PX = 4;
+  /** Radius of the visible joystick base in pixels. */
+  private static readonly BASE_RADIUS = 55;
+  /** Pixels of displacement before the joystick registers input. */
+  private static readonly DEAD_ZONE_PX = 6;
 
   constructor() {
     this.zoneEl = document.getElementById('joystick-zone')!;
@@ -42,7 +58,7 @@ export class MobileJoystick {
     this.zoneEl.addEventListener('touchcancel', this.onTouchEnd, { passive: false });
   }
 
-  /** True while a finger is actively on the joystick. */
+  /** True while a finger is actively on the joystick zone. */
   get active(): boolean {
     return this.activeTouchId !== null;
   }
@@ -55,14 +71,27 @@ export class MobileJoystick {
     this.zoneEl.removeEventListener('touchcancel', this.onTouchEnd);
   }
 
-  // ── Event handlers (arrow functions preserve `this`) ────────────────────
+  // ── Event handlers ────────────────────────────────────────────────────────
 
   private readonly onTouchStart = (e: TouchEvent): void => {
     e.preventDefault();
     if (this.activeTouchId !== null) return; // already tracking one finger
     const touch = e.changedTouches[0];
     if (!touch) return;
+
     this.activeTouchId = touch.identifier;
+
+    // Float the base to the touch position, clamped so the full circle stays in zone
+    const R = MobileJoystick.BASE_RADIUS;
+    const rect = this.zoneEl.getBoundingClientRect();
+    this.baseCenterX = Math.min(Math.max(touch.clientX, rect.left + R), rect.right - R);
+    this.baseCenterY = Math.min(Math.max(touch.clientY, rect.top + R), rect.bottom - R);
+
+    // Position and reveal the base element (coordinates relative to zone top-left)
+    this.baseEl.style.left = `${this.baseCenterX - rect.left}px`;
+    this.baseEl.style.top = `${this.baseCenterY - rect.top}px`;
+    this.baseEl.style.display = 'block';
+
     this.updateFromTouch(touch);
   };
 
@@ -88,32 +117,30 @@ export class MobileJoystick {
     }
   };
 
-  // ── Core logic ───────────────────────────────────────────────────────────
+  // ── Core logic ────────────────────────────────────────────────────────────
 
   private updateFromTouch(touch: Touch): void {
-    const rect = this.baseEl.getBoundingClientRect();
-    const baseRadius = rect.width / 2;
-    const cx = rect.left + baseRadius;
-    const cy = rect.top + baseRadius;
+    const R = MobileJoystick.BASE_RADIUS;
+    const rect = this.zoneEl.getBoundingClientRect();
 
-    let offsetX = touch.clientX - cx;
-    let offsetY = touch.clientY - cy;
+    let offsetX = touch.clientX - this.baseCenterX;
+    let offsetY = touch.clientY - this.baseCenterY;
     const dist = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
 
-    // Clamp knob to the base circle
-    if (dist > baseRadius) {
-      const scale = baseRadius / dist;
+    // Clamp knob inside the base circle
+    if (dist > R) {
+      const scale = R / dist;
       offsetX *= scale;
       offsetY *= scale;
     }
 
-    // Move knob visually (position as % of base, centered at 50%/50%)
-    const knobPctX = (offsetX / baseRadius) * 50;
-    const knobPctY = (offsetY / baseRadius) * 50;
-    this.knobEl.style.left = `${50 + knobPctX}%`;
-    this.knobEl.style.top = `${50 + knobPctY}%`;
+    // Move knob visually — absolute pixels from zone top-left
+    const baseLocalX = this.baseCenterX - rect.left;
+    const baseLocalY = this.baseCenterY - rect.top;
+    this.knobEl.style.left = `${baseLocalX + offsetX}px`;
+    this.knobEl.style.top = `${baseLocalY + offsetY}px`;
 
-    // Dead zone: suppress output for tiny accidental touches
+    // Dead zone — suppress output for accidental micro-touches
     if (dist < MobileJoystick.DEAD_ZONE_PX) {
       this.dx = 0;
       this.dy = 0;
@@ -122,13 +149,11 @@ export class MobileJoystick {
       return;
     }
 
-    // Normalize: dx/dy encode both direction AND magnitude in [-1, 1].
-    // After clamping above, clampedDist ≤ baseRadius, so magnitude is always ≤ 1.
-    // sqrt(dx² + dy²) == magnitude ≤ 1 (no further clamping needed).
-    const clampedDist = Math.min(dist, baseRadius);
-    this.dx = offsetX / baseRadius;
-    this.dy = offsetY / baseRadius;
-    this.magnitude = clampedDist / baseRadius;
+    // Normalize into [-1, 1] with magnitude ≤ 1
+    const clampedDist = Math.min(dist, R);
+    this.dx = offsetX / R;
+    this.dy = offsetY / R;       // dy < 0 = up on screen = forward in world (matches W key)
+    this.magnitude = clampedDist / R;
     this.angle = Math.atan2(offsetY, offsetX);
   }
 
@@ -137,6 +162,7 @@ export class MobileJoystick {
     this.dy = 0;
     this.magnitude = 0;
     this.angle = 0;
+    this.baseEl.style.display = 'none';
     this.knobEl.style.left = '50%';
     this.knobEl.style.top = '50%';
   }
