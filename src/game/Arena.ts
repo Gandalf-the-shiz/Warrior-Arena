@@ -887,8 +887,8 @@ export class Arena {
 
   private buildBoundaryWalls(): void {
     const WALL_RADIUS = 30.5;
-    const WALL_HEIGHT = 8;
-    const SEGMENTS = 16;
+    const WALL_HEIGHT = 10;
+    const SEGMENTS = 32;
 
     for (let i = 0; i < SEGMENTS; i++) {
       const angle = (i / SEGMENTS) * Math.PI * 2;
@@ -897,15 +897,15 @@ export class Arena {
 
       const x = Math.cos(midAngle) * WALL_RADIUS;
       const z = Math.sin(midAngle) * WALL_RADIUS;
-      // Width of one segment chord
-      const segWidth = 2 * WALL_RADIUS * Math.sin(Math.PI / SEGMENTS) + 0.1;
+      // Chord width + generous overlap so adjacent panels seal at seams
+      const segWidth = 2 * WALL_RADIUS * Math.sin(Math.PI / SEGMENTS) + 1.0;
 
       const body = this.physics.createStaticBody(x, WALL_HEIGHT / 2, z);
       const collider = this.physics.createCuboidCollider(
         body,
         segWidth / 2,
         WALL_HEIGHT / 2,
-        0.3,
+        1.5,
       );
       // Rotate collider to face toward the arena centre
       const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, midAngle, 0));

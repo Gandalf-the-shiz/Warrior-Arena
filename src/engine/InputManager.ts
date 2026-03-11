@@ -1,3 +1,5 @@
+import { MobileJoystick } from '@/input/MobileJoystick';
+
 /**
  * Manages all player input:
  *  - Keyboard (WASD, Space, Shift)
@@ -23,14 +25,7 @@ export class InputManager {
   private attackPressTimestamp = 0;
 
   // ── Touch / virtual joystick ───────────────────────────────────────────
-  private joystickActive = false;
-  private joystickId: number | null = null;
-  private joystickOriginX = 0;
-  private joystickOriginY = 0;
-  private joystickDeltaX = 0;
-  private joystickDeltaY = 0;
-  private readonly JOYSTICK_RADIUS = 60; // pixels
-
+  private readonly joystick: MobileJoystick;
   private touchAttack = false;
 
   // Camera touch (right half of screen)
@@ -41,9 +36,10 @@ export class InputManager {
   private camTouchDeltaY = 0;
 
   constructor(canvas: HTMLCanvasElement) {
+    this.joystick = new MobileJoystick();
     this.bindKeyboard();
     this.bindMouse(canvas);
-    this.bindTouch();
+    this.bindCameraTouch();
     this.bindAttackButton();
   }
 
@@ -61,15 +57,17 @@ export class InputManager {
       if (this.keys['KeyS'] || this.keys['ArrowDown']) z += 1;
     }
 
-    // Virtual joystick overrides keyboard on touch devices
-    // Note: screen Y goes DOWN, so pushing joystick UP gives negative deltaY.
-    // We negate deltaY so that "up on screen" maps to negative Z (forward in Three.js).
-    if (this.joystickActive) {
-      x = this.joystickDeltaX / this.JOYSTICK_RADIUS;
-      z = -this.joystickDeltaY / this.JOYSTICK_RADIUS;
+    // Virtual joystick overrides keyboard on touch devices.
+    // joystick.dx: -1 = left, +1 = right (screen space, magnitude embedded).
+    // joystick.dy: -1 = up on screen, +1 = down on screen.
+    // Negate dy so that "up on screen" → negative Z (forward in Three.js).
+    if (this.joystick.active) {
+      x = this.joystick.dx;
+      z = -this.joystick.dy;
     }
 
-    // Normalise diagonal movement
+    // Normalise diagonal movement (keyboard may produce len > 1 on diagonals;
+    // joystick vector has magnitude ≤ 1 so the branch is a no-op for touch input)
     const len = Math.sqrt(x * x + z * z);
     if (len > 1) {
       x /= len;
@@ -236,68 +234,7 @@ export class InputManager {
     });
   }
 
-  private bindTouch(): void {
-    const joystickZone = document.getElementById('joystick-zone');
-    const knob = document.getElementById('joystick-knob');
-
-    // ── Joystick: bind directly to #joystick-zone so overlay intercepts work
-    if (joystickZone) {
-      joystickZone.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const touch = e.changedTouches[0];
-        if (touch && this.joystickId === null) {
-          this.joystickId = touch.identifier;
-          this.joystickOriginX = touch.clientX;
-          this.joystickOriginY = touch.clientY;
-          this.joystickActive = true;
-
-          joystickZone.style.left = `${touch.clientX - 60}px`;
-          joystickZone.style.bottom = '';
-          joystickZone.style.top = `${touch.clientY - 60}px`;
-        }
-      }, { passive: false });
-
-      joystickZone.addEventListener('touchmove', (e) => {
-        e.preventDefault();
-        for (const touch of Array.from(e.changedTouches)) {
-          if (touch.identifier === this.joystickId) {
-            const dx = touch.clientX - this.joystickOriginX;
-            const dy = touch.clientY - this.joystickOriginY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const clamped = Math.min(dist, this.JOYSTICK_RADIUS);
-            const angle = Math.atan2(dy, dx);
-            this.joystickDeltaX = Math.cos(angle) * clamped;
-            this.joystickDeltaY = Math.sin(angle) * clamped;
-
-            if (knob) {
-              knob.style.transform = `translate(calc(-50% + ${this.joystickDeltaX}px), calc(-50% + ${this.joystickDeltaY}px))`;
-            }
-          }
-        }
-      }, { passive: false });
-
-      const endJoystick = (e: TouchEvent): void => {
-        for (const touch of Array.from(e.changedTouches)) {
-          if (touch.identifier === this.joystickId) {
-            this.joystickId = null;
-            this.joystickActive = false;
-            this.joystickDeltaX = 0;
-            this.joystickDeltaY = 0;
-            if (knob) {
-              knob.style.transform = 'translate(-50%, -50%)';
-            }
-            joystickZone.style.left = '24px';
-            joystickZone.style.top = '';
-            joystickZone.style.bottom = '24px';
-          }
-        }
-      };
-
-      joystickZone.addEventListener('touchend', endJoystick, { passive: false });
-      joystickZone.addEventListener('touchcancel', endJoystick, { passive: false });
-    }
-
+  private bindCameraTouch(): void {
     // ── Camera rotation: bind to document so right-side touches always register
     document.addEventListener('touchstart', (e) => {
       for (const touch of Array.from(e.changedTouches)) {
