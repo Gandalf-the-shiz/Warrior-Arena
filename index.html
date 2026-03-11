@@ -34,32 +34,32 @@
       /* Health & Stamina — top-left */
       #bars {
         position: absolute;
-        top: 16px;
-        left: 16px;
+        top: 8px;
+        left: 8px;
         display: flex;
         flex-direction: column;
-        gap: 6px;
-        width: 220px;
+        gap: 3px;
+        width: 110px;
       }
       .bar-row {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 4px;
       }
       .bar-label {
-        font-size: 11px;
+        font-size: 6px;
         letter-spacing: 0.12em;
         text-transform: uppercase;
         color: #aaa;
-        width: 22px;
+        width: 11px;
         flex-shrink: 0;
       }
       .bar-track {
         flex: 1;
-        height: 10px;
+        height: 5px;
         background: rgba(0,0,0,0.6);
         border: 1px solid rgba(255,255,255,0.12);
-        border-radius: 2px;
+        border-radius: 1px;
         overflow: hidden;
       }
       .bar-fill {
@@ -79,14 +79,14 @@
       /* Wave counter — top-center */
       #wave-counter {
         position: absolute;
-        top: 16px;
+        top: 8px;
         left: 50%;
         transform: translateX(-50%);
-        font-size: 22px;
+        font-size: 11px;
         font-weight: bold;
         letter-spacing: 0.25em;
         text-transform: uppercase;
-        text-shadow: 0 0 12px rgba(255,100,50,0.7), 0 2px 4px rgba(0,0,0,0.9);
+        text-shadow: 0 0 6px rgba(255,100,50,0.7), 0 1px 2px rgba(0,0,0,0.9);
         color: #e8d5a0;
         white-space: nowrap;
       }
@@ -94,18 +94,18 @@
       /* Kill counter — top-right */
       #kill-counter {
         position: absolute;
-        top: 16px;
-        right: 16px;
+        top: 8px;
+        right: 8px;
         display: flex;
         align-items: center;
-        gap: 6px;
-        font-size: 18px;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+        gap: 3px;
+        font-size: 9px;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.9);
         color: #ccc;
       }
-      #kill-counter .skull { font-size: 20px; }
+      #kill-counter .skull { font-size: 10px; }
       #kill-count {
-        font-size: 20px;
+        font-size: 10px;
         font-weight: bold;
         color: #e8d5a0;
       }
@@ -113,21 +113,21 @@
       /* Style meter — right side below kill counter */
       #style-meter {
         position: absolute;
-        top: 60px;
-        right: 16px;
+        top: 30px;
+        right: 8px;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 2px;
+        gap: 1px;
       }
       #style-label {
-        font-size: 10px;
+        font-size: 5px;
         letter-spacing: 0.18em;
         text-transform: uppercase;
         color: #777;
       }
       #style-rank {
-        font-size: 52px;
+        font-size: 26px;
         font-weight: bold;
         line-height: 1;
         color: #888;
@@ -141,29 +141,29 @@
       }
       #joystick-zone {
         position: absolute;
-        bottom: 24px;
-        left: 24px;
-        width: 120px;
-        height: 120px;
+        bottom: 12px;
+        left: 12px;
+        width: 60px;
+        height: 60px;
         pointer-events: auto;
         touch-action: none;
       }
       #joystick-base {
-        width: 120px;
-        height: 120px;
+        width: 60px;
+        height: 60px;
         border-radius: 50%;
         background: rgba(255,255,255,0.08);
-        border: 2px solid rgba(255,255,255,0.2);
+        border: 1px solid rgba(255,255,255,0.2);
         display: flex;
         align-items: center;
         justify-content: center;
       }
       #joystick-knob {
-        width: 48px;
-        height: 48px;
+        width: 24px;
+        height: 24px;
         border-radius: 50%;
         background: rgba(255,255,255,0.25);
-        border: 2px solid rgba(255,255,255,0.4);
+        border: 1px solid rgba(255,255,255,0.4);
         position: absolute;
         transform: translate(-50%, -50%);
         left: 50%;
@@ -172,21 +172,21 @@
       }
       #attack-btn {
         position: absolute;
-        bottom: 40px;
-        right: 32px;
-        width: 72px;
-        height: 72px;
+        bottom: 20px;
+        right: 16px;
+        width: 36px;
+        height: 36px;
         border-radius: 50%;
         background: rgba(180,30,30,0.5);
-        border: 2px solid rgba(255,80,80,0.6);
+        border: 1px solid rgba(255,80,80,0.6);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 28px;
+        font-size: 14px;
         user-select: none;
         -webkit-user-select: none;
         color: #fff;
-        text-shadow: 0 0 6px rgba(255,50,50,0.8);
+        text-shadow: 0 0 3px rgba(255,50,50,0.8);
         pointer-events: auto;
         touch-action: none;
       }
