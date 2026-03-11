@@ -60,10 +60,10 @@ export class InputManager {
     // Virtual joystick overrides keyboard on touch devices.
     // joystick.dx: -1 = left, +1 = right (screen space, magnitude embedded).
     // joystick.dy: -1 = up on screen, +1 = down on screen.
-    // Negate dy so that "up on screen" → negative Z (forward in Three.js).
+    // dy maps directly to z: up on screen (dy < 0) = forward (z < 0), matching W key.
     if (this.joystick.active) {
       x = this.joystick.dx;
-      z = -this.joystick.dy;
+      z = this.joystick.dy;
     }
 
     // Normalise diagonal movement (keyboard may produce len > 1 on diagonals;

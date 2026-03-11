@@ -887,8 +887,15 @@ export class Arena {
 
   private buildBoundaryWalls(): void {
     const WALL_RADIUS = 30.5;
-    const WALL_HEIGHT = 10;
-    const SEGMENTS = 32;
+    const WALL_HEIGHT = 12;     // extra height — player can never jump over
+    // Walls extend 0.6 units below the floor surface (y = 0) to fully seal
+    // the floor/wall seam and prevent the player capsule slipping through.
+    const WALL_BOTTOM = -0.6;
+    const WALL_HALF_H = WALL_HEIGHT / 2;
+    const WALL_CENTER_Y = WALL_BOTTOM + WALL_HALF_H; // body centre in Y
+    // More segments + bigger overlap seals corner cracks better
+    // 48 segments (up from 32) gives tighter panel overlap and fewer visible corner gaps
+    const SEGMENTS = 48;
 
     for (let i = 0; i < SEGMENTS; i++) {
       const angle = (i / SEGMENTS) * Math.PI * 2;
@@ -897,19 +904,47 @@ export class Arena {
 
       const x = Math.cos(midAngle) * WALL_RADIUS;
       const z = Math.sin(midAngle) * WALL_RADIUS;
-      // Chord width + generous overlap so adjacent panels seal at seams
-      const segWidth = 2 * WALL_RADIUS * Math.sin(Math.PI / SEGMENTS) + 1.0;
+      // Chord width plus generous overlap so adjacent panels seal at seams
+      const segWidth = 2 * WALL_RADIUS * Math.sin(Math.PI / SEGMENTS) + 2.0;
 
-      const body = this.physics.createStaticBody(x, WALL_HEIGHT / 2, z);
+      const body = this.physics.createStaticBody(x, WALL_CENTER_Y, z);
       const collider = this.physics.createCuboidCollider(
         body,
         segWidth / 2,
-        WALL_HEIGHT / 2,
-        1.5,
+        WALL_HALF_H,
+        2.0,   // thicker depth (was 1.5) for a more robust inner face
       );
       // Rotate collider to face toward the arena centre
       const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, midAngle, 0));
       collider.setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w });
+    }
+
+    // Thin floor-boundary ring: a flat annulus at the arena edge (r ≈ 28–31) that
+    // bridges the floor-slab edge and the wall inner faces, eliminating the seam gap
+    // where the player capsule could otherwise wedge through.
+    // 64 ring segments for smooth circular coverage at this radius (~30 units)
+    const RING_SEGS = 64;
+    const RING_Y = -0.2;  // same Y as floor body
+    const RING_INNER = 28.0;
+    const RING_OUTER = 31.5;
+    const RING_HALF_W = (RING_OUTER - RING_INNER) / 2;
+    const RING_MID_R  = (RING_INNER + RING_OUTER) / 2;
+    for (let i = 0; i < RING_SEGS; i++) {
+      const angle = (i / RING_SEGS) * Math.PI * 2;
+      const nextAngle = ((i + 1) / RING_SEGS) * Math.PI * 2;
+      const midAngle = (angle + nextAngle) / 2;
+      const rx = Math.cos(midAngle) * RING_MID_R;
+      const rz = Math.sin(midAngle) * RING_MID_R;
+      const segW = 2 * RING_MID_R * Math.sin(Math.PI / RING_SEGS) + 0.5;
+      const ringBody = this.physics.createStaticBody(rx, RING_Y, rz);
+      const ringCollider = this.physics.createCuboidCollider(
+        ringBody,
+        segW / 2,
+        0.2,
+        RING_HALF_W,
+      );
+      const rquat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, midAngle, 0));
+      ringCollider.setRotation({ x: rquat.x, y: rquat.y, z: rquat.z, w: rquat.w });
     }
   }
 
