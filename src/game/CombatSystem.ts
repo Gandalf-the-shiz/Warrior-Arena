@@ -239,7 +239,7 @@ export class CombatSystem {
         continue;
       }
 
-      player.takeDamage(damage);
+      player.takeDamage(damage, enemy.getPosition());
 
       if (!player.isDead) {
         styleMeter?.onPlayerDamage();
@@ -265,7 +265,7 @@ export class CombatSystem {
       if (enemy.isDead) continue;
       const dmg = enemy.checkProjectileHit(playerPos, 1.0);
       if (dmg > 0) {
-        player.takeDamage(dmg);
+        player.takeDamage(dmg, enemy.getPosition());
       }
     }
   }
@@ -334,7 +334,7 @@ export class CombatSystem {
       const dist = boss.getPosition().distanceTo(playerPos);
       if (dist <= ENEMY_ATTACK_REACH * 1.8) {
         boss.markDamageDealt();
-        player.takeDamage(boss.attackDamage);
+        player.takeDamage(boss.attackDamage, boss.getPosition());
         if (!player.isDead) {
           styleMeter?.onPlayerDamage();
           vfx.shakeCamera(0.22, 0.35);
@@ -348,7 +348,7 @@ export class CombatSystem {
       const slamPos = boss.getSlamPosition();
       if (player.getPosition().distanceTo(slamPos) <= 5.0) {
         boss.markSlamDealt();
-        player.takeDamage(boss.attackDamage);
+        player.takeDamage(boss.attackDamage, slamPos);
         if (!player.isDead) {
           vfx.shakeCamera(0.3, 0.5);
           vfx.spawnBloodFlash();
@@ -406,7 +406,7 @@ export class CombatSystem {
         const dist = commander.getPosition().distanceTo(playerPos);
         if (dist <= ENEMY_ATTACK_REACH * 1.5) {
           commander.markDamageDealt();
-          player.takeDamage(commander.attackDamage);
+          player.takeDamage(commander.attackDamage, commander.getPosition());
           if (!player.isDead) {
             styleMeter?.onPlayerDamage();
             vfx.shakeCamera(0.14, 0.22);

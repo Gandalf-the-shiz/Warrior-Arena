@@ -212,6 +212,8 @@ async function main(): Promise<void> {
       skillPickerActive = false;
       loop.unpause();
       waves.startNextWave();
+      // Advance armor degradation wave wear after the new wave begins
+      player.armorDegradation.onWaveAdvanced(waves.currentWave);
     });
   };
 
@@ -420,6 +422,7 @@ async function main(): Promise<void> {
           levelSystem.addXP(xpType, styleMeter.rank);
           killStreakCount++;
           arena.onEnemyKilled();
+          player.armorDegradation.onEnemyKilled();
           vfx.onKill(player.getPosition());
           if (killStreakCount === 5) { audio.playKillStreak5(); }
           else if (killStreakCount === 10) { audio.playKillStreak10(); }

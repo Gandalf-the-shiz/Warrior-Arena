@@ -446,8 +446,11 @@ export class PlayerController {
 
   /**
    * Apply damage to the player, honouring the invincibility window.
+   * @param amount         Incoming raw damage amount.
+   * @param sourcePosition Optional world-space position of the attacker/hit source.
+   *                       Used to paint a located dent on the armor degradation system.
    */
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, sourcePosition?: THREE.Vector3): void {
     if (this.isDead || this.invincibilityTimer > 0) return;
 
     // Apply defense reduction from skill system
@@ -457,8 +460,13 @@ export class PlayerController {
     this.hp = Math.max(0, this.hp - finalDamage);
     this.invincibilityTimer = 0.5;
 
-    // Degrade armor on every hit — visible wear accumulates throughout the run
-    this.armorDegradation.onHit();
+    // Degrade armor on every hit — visible wear accumulates throughout the run.
+    // Use positioned variant when a source position is available for localized dents.
+    if (sourcePosition) {
+      this.armorDegradation.onHitTaken(sourcePosition);
+    } else {
+      this.armorDegradation.onHit();
+    }
 
     if (this.hp <= 0) {
       this.isDead = true;
