@@ -121,7 +121,6 @@ export class MobileJoystick {
 
   private updateFromTouch(touch: Touch): void {
     const R = MobileJoystick.BASE_RADIUS;
-    const rect = this.zoneEl.getBoundingClientRect();
 
     let offsetX = touch.clientX - this.baseCenterX;
     let offsetY = touch.clientY - this.baseCenterY;
@@ -134,11 +133,12 @@ export class MobileJoystick {
       offsetY *= scale;
     }
 
-    // Move knob visually — absolute pixels from zone top-left
-    const baseLocalX = this.baseCenterX - rect.left;
-    const baseLocalY = this.baseCenterY - rect.top;
-    this.knobEl.style.left = `${baseLocalX + offsetX}px`;
-    this.knobEl.style.top = `${baseLocalY + offsetY}px`;
+    // Move knob visually — knob is a child of baseEl, so position is relative to the
+    // base element's own coordinate space (0,0 = base top-left; R,R = base centre).
+    // The knob has CSS `transform: translate(-50%,-50%)`, so setting left/top to the
+    // desired knob-centre position places it correctly inside the base.
+    this.knobEl.style.left = `${R + offsetX}px`;
+    this.knobEl.style.top = `${R + offsetY}px`;
 
     // Dead zone — suppress output for accidental micro-touches
     if (dist < MobileJoystick.DEAD_ZONE_PX) {
