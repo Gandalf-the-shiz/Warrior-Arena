@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import type { QualitySettings } from '@/engine/QualityManager';
 
 // ── Chromatic Aberration shader ───────────────────────────────────────────────
 const ChromaticAberrationShader = {
@@ -138,6 +139,9 @@ const ColorGradeShader = {
  * Shadow maps, tone-mapping, fog and background colour are all set up here.
  * Post-processing: UnrealBloomPass for glowing emissives + vignette ShaderPass
  * + chromatic aberration (Phase 3).
+ *
+ * Quality management: call `applyQualitySettings()` whenever the QualityManager
+ * changes tiers to adjust pixel ratio, shadow maps, and post-processing passes.
  */
 export class Renderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -145,8 +149,11 @@ export class Renderer {
   readonly camera: THREE.PerspectiveCamera;
 
   private readonly composer: EffectComposer;
+  private readonly bloomPass: UnrealBloomPass;
   private readonly chromaticAberrationPass: ShaderPass;
   private readonly filmGrainPass: ShaderPass;
+  /** The render pass used when post-processing is disabled. */
+  private postProcessingEnabled = true;
 
   // Saved baseline scene state for weather restore
   private readonly baseFogColor = new THREE.Color(0xc8a080);
@@ -195,13 +202,13 @@ export class Renderer {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
 
     // Bloom — lower threshold so torches, emissive sword, visor glow all pop
-    const bloomPass = new UnrealBloomPass(
+    this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
       0.6,  // strength — stronger glow
       0.6,  // radius
       0.5,  // threshold — lower so more emissives bloom
     );
-    this.composer.addPass(bloomPass);
+    this.composer.addPass(this.bloomPass);
 
     // Cinematic vignette — subtle darkening at screen edges
     const vignettePass = new ShaderPass(VignetteShader);
@@ -315,6 +322,47 @@ export class Renderer {
     if (this.filmGrainPass.uniforms['time']) {
       this.filmGrainPass.uniforms['time'].value = time;
     }
-    this.composer.render();
+    if (this.postProcessingEnabled) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
+  }
+
+  /**
+   * Apply quality settings from QualityManager.
+   * Safe to call every time the tier changes; no-ops if already applied.
+   */
+  applyQualitySettings(settings: QualitySettings): void {
+    // Pixel ratio
+    const clampedRatio = Math.min(settings.pixelRatio, window.devicePixelRatio ?? 1);
+    this.renderer.setPixelRatio(clampedRatio);
+
+    // Shadow maps
+    this.renderer.shadowMap.enabled = settings.shadowsEnabled;
+
+    // Post-processing pipeline
+    this.postProcessingEnabled = settings.postProcessingEnabled;
+
+    // Individual pass toggles
+    this.bloomPass.enabled               = settings.bloomEnabled;
+    this.chromaticAberrationPass.enabled = settings.chromaticAberrationEnabled;
+    this.filmGrainPass.enabled           = settings.filmGrainEnabled;
+  }
+
+  /**
+   * Returns renderer draw-call / memory stats from THREE.WebGLRenderer.info.
+   * Note: Three.js resets these counters after each render() call when
+   * `renderer.info.autoReset` is true (default).  Call this *before* the
+   * next render if you need the previous frame's numbers.
+   */
+  getRendererInfo() {
+    const info = this.renderer.info;
+    return {
+      drawCalls:  info.render.calls,
+      triangles:  info.render.triangles,
+      geometries: info.memory.geometries,
+      textures:   info.memory.textures,
+    };
   }
 }

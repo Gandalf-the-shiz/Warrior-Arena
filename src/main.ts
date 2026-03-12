@@ -4,6 +4,8 @@ import { Renderer } from '@/engine/Renderer';
 import { PhysicsWorld } from '@/engine/PhysicsWorld';
 import { InputManager } from '@/engine/InputManager';
 import { GameLoop } from '@/engine/GameLoop';
+import { PerformanceMonitor } from '@/engine/PerformanceMonitor';
+import { QualityManager } from '@/engine/QualityManager';
 import { Arena } from '@/game/Arena';
 import { PlayerController } from '@/game/PlayerController';
 import { CameraController } from '@/game/CameraController';
@@ -26,6 +28,7 @@ import { ComboDisplay } from '@/ui/ComboDisplay';
 import { ScreenEffects } from '@/ui/ScreenEffects';
 import { EnemySpawnVFX } from '@/game/EnemySpawnVFX';
 import { ScoreManager } from '@/game/ScoreManager';
+import { ErrorHandler } from '@/utils/ErrorHandler';
 // ── Phase 3 imports ──────────────────────────────────────────────────────
 import { ArenaHazards } from '@/game/ArenaHazards';
 import { SkillSystem } from '@/game/SkillSystem';
@@ -90,6 +93,9 @@ function showError(message: string): void {
 }
 
 async function main(): Promise<void> {
+  // ── Install global error handlers as early as possible ────────────────
+  ErrorHandler.install();
+
   const loading = showLoading();
 
   // ── Seconds after player death before the game-over overlay appears ────
@@ -111,6 +117,17 @@ async function main(): Promise<void> {
   const physics = new PhysicsWorld();
   const input = new InputManager(canvas);
   const hud = new HUD();
+
+  // ── Performance instrumentation + adaptive quality ─────────────────────
+  const perf = new PerformanceMonitor();
+  const quality = new QualityManager();
+  // Apply initial quality settings immediately
+  renderer.applyQualitySettings(quality.getSettings());
+  // Re-apply whenever QualityManager changes tier
+  quality.onTierChange = (settings) => {
+    renderer.applyQualitySettings(settings);
+    console.info('[Quality] Applied tier:', settings.tier);
+  };
 
   // ── Game objects ───────────────────────────────────────────────────────
   const arena = new Arena(renderer.scene, physics);
@@ -296,10 +313,17 @@ async function main(): Promise<void> {
   // ── Loot pickup tracking for screen flash ─────────────────────────────
   let prevPlayerHpForHeal = player.hp;
 
+  // ── UI throttle timers (driven by QualityManager.uiUpdateInterval) ────
+  let minimapTimer = 0;
+  let healthBarTimer = 0;
+
   // ── Game loop ──────────────────────────────────────────────────────────
   const loop = new GameLoop(
     // onUpdate  (variable timestep — mesh sync, lerp, camera)
     (delta) => {
+      perf.beginFrame();
+      perf.beginPhase('update');
+
       // ── Pause check ───────────────────────────────────────────────────
       // Don't allow pause while skill picker is open
       if (!skillPickerActive) {
@@ -314,6 +338,8 @@ async function main(): Promise<void> {
         hitstopRemaining = Math.max(0, hitstopRemaining - delta);
         // Camera still tracks smoothly during freeze
         camera.update(player.getPosition(), delta, player.getFacingYaw());
+        perf.endPhase('update');
+        perf.endFrame(renderer.renderer);
         return;
       }
 
@@ -561,9 +587,18 @@ async function main(): Promise<void> {
         renderer.setChromaticAberration(rankStrength[styleMeter.rank] ?? 0);
       }
 
-      // ── Original system updates ────────────────────────────────────────
-      minimap.update(player.getPosition(), player.getFacingYaw(), waves.enemies);
-      enemyHealthBars.update(waves.enemies);
+      // ── Original system updates (throttled by quality tier) ─────────────
+      const qs = quality.getSettings();
+      minimapTimer += delta;
+      healthBarTimer += delta;
+      if (minimapTimer >= qs.uiUpdateInterval) {
+        minimapTimer = 0;
+        minimap.update(player.getPosition(), player.getFacingYaw(), waves.enemies);
+      }
+      if (healthBarTimer >= qs.healthBarUpdateInterval) {
+        healthBarTimer = 0;
+        enemyHealthBars.update(waves.enemies);
+      }
       loot.update(gameDelta, player);
       damageNumbers.update(delta);
 
@@ -610,19 +645,33 @@ async function main(): Promise<void> {
       hud.updateHealth(player.hp, player.maxHp);
       hud.updateStamina(player.stamina, player.maxStamina);
       hud.updateStyleRank(styleMeter.rank);
+
+      // ── Performance monitor + adaptive quality ──────────────────────────
+      perf.activeEnemies = waves.enemies.length;
+      perf.endPhase('update');
+      // Feed loop timing into QualityManager for adaptive scaling
+      quality.update(delta, perf.frameTimeAvgMs);
     },
     // onFixedUpdate  (deterministic 60 Hz physics + input → velocity)
     () => {
-      if (hitstopRemaining > 0) return;
+      perf.beginPhase('fixedUpdate');
+      if (hitstopRemaining > 0) {
+        perf.endPhase('fixedUpdate');
+        return;
+      }
 
       player.fixedUpdate(camera.yaw);
       waves.fixedUpdate(player.getPosition());
       hazards.fixedUpdate();
       physics.step();
+      perf.endPhase('fixedUpdate');
     },
     // onRender
     () => {
+      perf.beginPhase('render');
       renderer.render(elapsed);
+      perf.endPhase('render');
+      perf.endFrame(renderer.renderer);
     },
   );
 
