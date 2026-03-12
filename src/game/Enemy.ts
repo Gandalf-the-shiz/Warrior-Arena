@@ -603,6 +603,38 @@ export class Enemy {
   }
 
   /**
+   * Apply global wave-tier scaling to make the game truly endless.
+   * Kicks in after wave 15; scaling ramps continuously with no upper cap.
+   *
+   * Tier table (each tier spans 10 waves):
+   *   Tier 1  (waves  1–14): no bonus — base stats apply
+   *   Tier 2  (waves 15–24): +20 % HP, +10 % speed, +10 % damage
+   *   Tier 3  (waves 25–34): +50 % HP, +25 % speed, +20 % damage
+   *   Tier 4  (waves 35–44): +90 % HP, +45 % speed, +35 % damage
+   *   Tier 5+ (wave 45+)  : scales with a smooth multiplier derived from
+   *                          `floor(wave / 10)` — never plateaus.
+   *
+   * @param wave  Current wave number at spawn time.
+   */
+  applyGlobalScaling(wave: number): void {
+    if (wave < 15) return;
+
+    // Compute a tier index that grows continuously: tier 2 starts at wave 15
+    const tierIndex = Math.floor((wave - 5) / 10); // 1 at wave 15, 2 at wave 25 …
+
+    // Smooth exponential-ish curves — tuned so even tier 10 (wave 95) is
+    // challenging but not literally impossible.
+    const hpMult     = 1 + tierIndex * 0.30;  // +30% HP per tier
+    const speedMult  = 1 + tierIndex * 0.08;  // +8% speed per tier
+    const damageMult = 1 + tierIndex * 0.12;  // +12% damage per tier
+
+    this.maxHp = Math.round(this.maxHp * hpMult);
+    this.hp = this.maxHp;
+    this.moveSpeed *= speedMult;
+    this.attackDamage = Math.round(this.attackDamage * damageMult);
+  }
+
+  /**
    * Receive damage from a player attack.
    * Applies knockback impulse and starts the hit-flash / hit-stun.
    */

@@ -19,7 +19,17 @@ export type SkillId =
   | 'ghost_step'
   | 'berserker_rage'
   | 'soul_harvest'
-  | 'arena_champion';
+  | 'arena_champion'
+  | 'vampiric_blade'
+  | 'time_warp'
+  | 'death_mark'
+  | 'titan_blood'
+  | 'undying_will'
+  | 'chain_lightning'
+  | 'blood_price'
+  | 'warlords_stand'
+  | 'executioner'
+  | 'adrenaline_surge';
 
 export type SkillRarity = 'Common' | 'Rare' | 'Epic' | 'Legendary';
 
@@ -105,6 +115,87 @@ export const ALL_SKILLS: SkillDefinition[] = [
     rarity: 'Legendary',
     waveDuration: 1,
   },
+  // ── New skills ───────────────────────────────────────────────────────────
+  {
+    id: 'vampiric_blade',
+    name: 'Vampiric Blade',
+    description: 'Each hit restores 3 HP for 3 waves',
+    icon: '🩸',
+    rarity: 'Rare',
+    waveDuration: 3,
+  },
+  {
+    id: 'time_warp',
+    name: 'Time Warp',
+    description: 'Slow enemies by 30% for 1 wave',
+    icon: '⌛',
+    rarity: 'Epic',
+    waveDuration: 1,
+  },
+  {
+    id: 'death_mark',
+    name: 'Death Mark',
+    description: 'Every 5th kill instantly explodes nearby foes for 2 waves',
+    icon: '💥',
+    rarity: 'Epic',
+    waveDuration: 2,
+  },
+  {
+    id: 'titan_blood',
+    name: 'Titan Blood',
+    description: '+80 max HP permanently this run',
+    icon: '🏛️',
+    rarity: 'Rare',
+    waveDuration: 0,
+  },
+  {
+    id: 'undying_will',
+    name: 'Undying Will',
+    description: 'Survive one lethal hit with 1 HP for 2 waves',
+    icon: '🕯️',
+    rarity: 'Legendary',
+    waveDuration: 2,
+  },
+  {
+    id: 'chain_lightning',
+    name: 'Chain Lightning',
+    description: 'Attacks arc to a second nearby enemy for 2 waves',
+    icon: '⚡',
+    rarity: 'Epic',
+    waveDuration: 2,
+  },
+  {
+    id: 'blood_price',
+    name: 'Blood Price',
+    description: '+100% damage but -2 HP per second for 2 waves',
+    icon: '🗡️',
+    rarity: 'Legendary',
+    waveDuration: 2,
+  },
+  {
+    id: 'warlords_stand',
+    name: "Warlord's Stand",
+    description: '+40% damage and +40% defence for 1 wave',
+    icon: '⚔️',
+    rarity: 'Legendary',
+    waveDuration: 1,
+  },
+  {
+    id: 'executioner',
+    name: 'Executioner',
+    description: '+50% damage against enemies below 25% HP for 3 waves',
+    icon: '🪓',
+    rarity: 'Rare',
+    waveDuration: 3,
+  },
+  {
+    id: 'adrenaline_surge',
+    name: 'Adrenaline Surge',
+    description: 'Restore 30 HP and +25% speed for 1 wave',
+    icon: '💊',
+    rarity: 'Common',
+    waveDuration: 1,
+  },
 ];
 
 export const RARITY_COLORS: Record<SkillRarity, string> = {
@@ -140,6 +231,17 @@ export class SkillSystem {
       player.hp = Math.min(player.hp + 50, player.maxHp);
       return;
     }
+    if (def.id === 'titan_blood') {
+      // Permanent +80 max HP this run
+      player.maxHp += 80;
+      player.hp = Math.min(player.hp + 80, player.maxHp);
+      return;
+    }
+    if (def.id === 'adrenaline_surge') {
+      // Instant partial heal; speed buff stored normally
+      player.hp = Math.min(player.hp + 30, player.maxHp);
+      // Fall through to store the duration effect below
+    }
     if (def.waveDuration === 0) return;
 
     // Remove existing effect with same id to avoid stacking
@@ -161,15 +263,17 @@ export class SkillSystem {
     if (this.isActive('burning_strikes')) mult += 0.1; // proxy for +5 damage
     if (this.isActive('berserker_rage')) mult += 0.75;
     if (this.isActive('arena_champion')) mult += 0.20;
+    if (this.isActive('blood_price'))    mult += 1.00; // +100% — high risk
+    if (this.isActive('warlords_stand')) mult += 0.40;
     return mult;
   }
 
   /** Damage reduction multiplier (lower = less damage taken). */
   getDefenseMultiplier(): number {
     let mult = 1.0;
-    if (this.isActive('iron_skin')) mult -= 0.30;
-    if (this.isActive('berserker_rage')) mult += 0.0; // no defense penalty at this time
+    if (this.isActive('iron_skin'))      mult -= 0.30;
     if (this.isActive('arena_champion')) mult -= 0.20;
+    if (this.isActive('warlords_stand')) mult -= 0.40;
     return Math.max(0.1, mult);
   }
 
@@ -177,8 +281,18 @@ export class SkillSystem {
   getMoveSpeedMultiplier(): number {
     let mult = 1.0;
     if (this.isActive('lightning_reflexes')) mult += 0.50;
-    if (this.isActive('arena_champion')) mult += 0.20;
+    if (this.isActive('arena_champion'))     mult += 0.20;
+    if (this.isActive('adrenaline_surge'))   mult += 0.25;
     return mult;
+  }
+
+  /**
+   * Enemy speed multiplier — for skills that slow enemies (Time Warp).
+   * Applied to each enemy's move speed by WaveManager at spawn time.
+   */
+  getEnemySlowMultiplier(): number {
+    if (this.isActive('time_warp')) return 0.70; // 30% slow
+    return 1.0;
   }
 
   /** Dodge cooldown multiplier (lower = faster). */
@@ -201,6 +315,36 @@ export class SkillSystem {
   /** Whether burning strikes trail glow should be shown. */
   hasBurningStrikes(): boolean {
     return this.isActive('burning_strikes');
+  }
+
+  /** Whether vampiric blade on-hit healing is active. */
+  hasVampiricBlade(): boolean {
+    return this.isActive('vampiric_blade');
+  }
+
+  /** Whether undying will (survive lethal hit) is active. */
+  hasUndyingWill(): boolean {
+    return this.isActive('undying_will');
+  }
+
+  /** Whether death mark (5th-kill explosion) is active. */
+  hasDeathMark(): boolean {
+    return this.isActive('death_mark');
+  }
+
+  /** Whether chain lightning (attack chain) is active. */
+  hasChainLightning(): boolean {
+    return this.isActive('chain_lightning');
+  }
+
+  /** Whether blood price drain is active. */
+  hasBloodPrice(): boolean {
+    return this.isActive('blood_price');
+  }
+
+  /** Whether executioner bonus (bonus damage vs low-HP foes) is active. */
+  hasExecutioner(): boolean {
+    return this.isActive('executioner');
   }
 
   /** Get list of currently active effects (for display purposes). */

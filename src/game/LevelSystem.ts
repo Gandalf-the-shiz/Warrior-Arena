@@ -4,8 +4,10 @@
  * XP sources: Skeleton=10, Ghoul=15, Brute=25, Boss=100.
  * Style rank multiplier: D=1x, C=1.5x, B=2x, A=3x, S=5x.
  *
- * Levels 1–10 with increasing XP thresholds.
+ * Levels 1–30 with increasing XP thresholds.
  * Each level-up grants +10 max HP, +5 max stamina, +5% damage, +2% speed.
+ * Levels 11–20 grant +8 HP/+4 stamina per level (base rates for that band).
+ * Levels 21–30 grant +6 HP/+3 stamina per level (diminishing returns).
  */
 import type { StyleRank } from '@/game/StyleMeter';
 
@@ -26,9 +28,45 @@ const RANK_MULTIPLIER: Record<StyleRank, number> = {
   S: 5.0,
 };
 
-/** XP required to REACH each level (level 1 = 0 XP threshold). */
-const LEVEL_THRESHOLDS = [0, 0, 100, 250, 500, 800, 1200, 1700, 2500, 3500, 5000];
-const MAX_LEVEL = 10;
+/**
+ * XP required to REACH each level (level 1 = 0 XP threshold).
+ * Levels 1–10: same as before.
+ * Levels 11–30: progressively larger gaps to reward sustained play.
+ */
+const LEVEL_THRESHOLDS = [
+  0,     // unused index 0
+  0,     // level  1 — start here
+  100,   // level  2
+  250,   // level  3
+  500,   // level  4
+  800,   // level  5
+  1200,  // level  6
+  1700,  // level  7
+  2500,  // level  8
+  3500,  // level  9
+  5000,  // level 10
+  7000,  // level 11
+  9500,  // level 12
+  12500, // level 13
+  16000, // level 14
+  20000, // level 15
+  25000, // level 16
+  31000, // level 17
+  38000, // level 18
+  46000, // level 19
+  55000, // level 20
+  65500, // level 21
+  77000, // level 22
+  90000, // level 23
+  104500,// level 24
+  120500,// level 25
+  138000,// level 26
+  157500,// level 27
+  179000,// level 28
+  203000,// level 29
+  230000,// level 30
+];
+const MAX_LEVEL = 30;
 
 export class LevelSystem {
   private _level = 1;
@@ -89,9 +127,18 @@ export class LevelSystem {
       if (this._xp < needed) break;
       this._level++;
       this._levelsGained++;
-      // Apply per-level bonuses
-      this._maxHpBonus += 10;
-      this._maxStaminaBonus += 5;
+      // HP / stamina bonuses taper off slightly at higher levels
+      if (this._level <= 10) {
+        this._maxHpBonus      += 10;
+        this._maxStaminaBonus += 5;
+      } else if (this._level <= 20) {
+        this._maxHpBonus      += 8;
+        this._maxStaminaBonus += 4;
+      } else {
+        this._maxHpBonus      += 6;
+        this._maxStaminaBonus += 3;
+      }
+      // Damage and speed scale the full way to 30
       this._damageMultiplier = 1.0 + (this._level - 1) * 0.05;
       this._speedMultiplier  = 1.0 + (this._level - 1) * 0.02;
       this.onLevelUp?.(this._level);
