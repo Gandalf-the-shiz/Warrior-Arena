@@ -61,6 +61,11 @@ export class InputManager {
    *
    * The joystick Y axis is inverted here (dy = -1 on screen-up → moveY = +1)
    * so that all downstream code uses forward-positive semantics.
+   *
+   * Mobile note: some touch coordinate flows in this project end up mirrored in
+   * world-space on the horizontal axis, so we negate the joystick X value here
+   * to preserve the expected “thumb right = move right / thumb left = move left”
+   * behavior on mobile.
    */
   getMovementInput(): { moveX: number; moveY: number } {
     let moveX = 0;
@@ -77,8 +82,9 @@ export class InputManager {
     // joystick.dx: -1 = left, +1 = right (screen space, magnitude embedded).
     // joystick.dy: -1 = up on screen, +1 = down on screen.
     // Negate dy so that thumb-up → positive forward intent.
+    // Negate dx as well so touch movement matches on-screen left/right intent.
     if (this.joystick.active) {
-      moveX = this.joystick.dx;
+      moveX = -this.joystick.dx;
       moveY = -this.joystick.dy;
     }
 
