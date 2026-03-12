@@ -462,9 +462,6 @@ export class WarriorModel {
 
     // ── Red 2-handed Broadsword ───────────────────────────────────────────────
     this.swordGroup = new THREE.Group();
-    // Held in front of chest at a ready stance (blade up, slightly forward)
-    this.swordGroup.position.set(0.18, 0.05, 0.28);
-    this.swordGroup.rotation.set(-0.3, 0, 0.15);
 
     // Main blade — wide broadsword fuller
     const blade = mkMesh(new THREE.BoxGeometry(0.14, 1.70, 0.018), MAT_BLADE);
@@ -524,14 +521,19 @@ export class WarriorModel {
     pommelGem.position.set(0, -0.59, 0);
     this.swordGroup.add(pommelGem);
 
-    // Attach sword to torsoGroup (2-handed, held in front of chest)
-    this.torsoGroup.add(this.swordGroup);
+    // Attach sword to rightForearmGroup — grip sits in the right gauntlet
+    this.rightForearmGroup.add(this.swordGroup);
+    // Position: crossguard just above the gauntlet (y=0.015), slight forward offset
+    this.swordGroup.position.set(0.01, 0.015, 0.06);
+    // Default carry rotation in forearm-local space: blade tilted slightly forward
+    this.swordGroup.rotation.set(0.15, 0, -0.10);
 
-    // Default 2-handed grip pose: shoulders angled forward/inward, elbows bent
-    this.leftArmGroup.rotation.set(0.5, 0, 0.35);
-    this.leftForearmGroup.rotation.x  = -1.0;
-    this.rightArmGroup.rotation.set(0.4, 0, -0.25);
-    this.rightForearmGroup.rotation.x = -0.9;
+    // Default right-hand carry pose — arm relaxed at side holding sword
+    this.rightArmGroup.rotation.set(0.15, 0, -0.20);
+    this.rightForearmGroup.rotation.x = -0.35;
+    // Left arm hangs freely (no sword grip in idle/run)
+    this.leftArmGroup.rotation.set(0.0, 0, 0.20);
+    this.leftForearmGroup.rotation.x = -0.15;
 
     // ── Assemble ──────────────────────────────────────────────────────────
     this.group.add(this.torsoGroup);
