@@ -91,8 +91,22 @@ export class BossEnemy {
     spawnZ: number,
     bossWaveNumber: number, // wave 5 = 1, wave 10 = 2, etc.
   ) {
-    this.maxHp = 200 + bossWaveNumber * 50;
+    // HP scaling accelerates past tier 2 (bossWaveNumber ≥ 4, i.e. wave 20+).
+    // bossWaveNumber 1–3:  200 + n*50   (250, 300, 350)
+    // bossWaveNumber 4+:  350 + (n-3)*120 (470, 590 …)  — much steeper
+    if (bossWaveNumber <= 3) {
+      this.maxHp = 200 + bossWaveNumber * 50;
+    } else {
+      this.maxHp = 350 + (bossWaveNumber - 3) * 120;
+    }
     this.hp = this.maxHp;
+
+    // Move speed and aggressiveness also scale past boss 3
+    if (bossWaveNumber >= 4) {
+      const tierBoost = Math.min((bossWaveNumber - 3) * 0.15, 1.2); // +15% per boss tier, 120% cap
+      this.moveSpeed        = 3.0 * (1 + tierBoost);
+      this.attackCooldownBase = Math.max(0.8, 2.5 - (bossWaveNumber - 3) * 0.2);
+    }
 
     // ── Physics body ─────────────────────────────────────────────────────
     this.body = physics.createDynamicBody(spawnX, 3, spawnZ, true);

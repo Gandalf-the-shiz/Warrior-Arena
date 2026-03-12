@@ -187,6 +187,9 @@ async function main(): Promise<void> {
   // Wire SkillSystem into PlayerController
   player.skillSystem = skillSystem;
 
+  // Wire SkillSystem into WaveManager (for Time Warp slow)
+  waves.skillSystem = skillSystem;
+
   // Wire audio into hazards
   hazards.setAudio(audio);
 
@@ -196,6 +199,12 @@ async function main(): Promise<void> {
     activeBoss = boss;
     bossHealthBar.show();
     audio.playBossRoar();
+  };
+
+  // Challenge Tier milestone — announce when player reaches a new tier
+  waves.onChallengeTier = (_tier) => {
+    audio.playBossRoar();  // repurpose dramatic sting for milestone
+    vfx.shakeCamera(0.2, 0.5);
   };
 
   // Level-up effects
@@ -297,6 +306,11 @@ async function main(): Promise<void> {
   let prevPlayerDead = false;
   let prevWave = waves.currentWave;
   let prevEnemyCount = waves.enemies.length;
+
+  // ── New skill state tracking ───────────────────────────────────────────
+  let bloodPriceDrainAccum = 0;       // accumulated drain timer for Blood Price
+  let deathMarkKillCounter = 0;       // rolling kill counter for Death Mark
+  let undyingWillConsumed = false;    // once-per-activation latch for Undying Will
 
   // ── Game-over tracking ─────────────────────────────────────────────────
   let gameOverTimer = 0;
@@ -409,6 +423,27 @@ async function main(): Promise<void> {
       }
       prevPlayerHp = player.hp;
 
+      // ── Undying Will: intercept lethal damage once ──────────────────────
+      if (skillSystem.hasUndyingWill() && !undyingWillConsumed && player.hp <= 0 && !player.isDead) {
+        player.hp = 1;
+        undyingWillConsumed = true;
+        screenEffects.flashHeal();
+        vfx.shakeCamera(0.3, 0.4);
+      }
+      // Reset latch when skill expires (no longer active)
+      if (!skillSystem.hasUndyingWill()) undyingWillConsumed = false;
+
+      // ── Blood Price: -2 HP/s drain while active ─────────────────────────
+      if (skillSystem.hasBloodPrice() && !player.isDead) {
+        bloodPriceDrainAccum += gameDelta;
+        if (bloodPriceDrainAccum >= 0.5) { // drain 1 HP every 0.5 s (= 2 HP/s)
+          bloodPriceDrainAccum -= 0.5;
+          player.hp = Math.max(1, player.hp - 1); // never kill the player outright
+        }
+      } else {
+        bloodPriceDrainAccum = 0;
+      }
+
       // Crowd gasp when HP drops below 25% for the first time this run
       if (!crowdGaspTriggered && player.hp / player.maxHp < 0.25 && prevHpForGasp / player.maxHp >= 0.25) {
         audio.playCrowdGasp();
@@ -460,6 +495,10 @@ async function main(): Promise<void> {
           if (skillSystem.hasSoulHarvest()) {
             player.hp = Math.min(player.hp + 10, player.maxHp);
           }
+          // Vampiric Blade: each hit restores 3 HP
+          if (skillSystem.hasVampiricBlade()) {
+            player.hp = Math.min(player.hp + 3, player.maxHp);
+          }
         },
         (pos, damage, isHeavy, isFinisher) => {
           damageNumbers.spawn(pos, damage, isHeavy, isFinisher, styleMeter.rank);
@@ -469,6 +508,12 @@ async function main(): Promise<void> {
           loot.spawnDrop(pos);
           if (skillSystem.hasSoulHarvest()) {
             player.hp = Math.min(player.hp + 10, player.maxHp);
+          }
+          // Death Mark: every 5th kill causes a ground slam VFX explosion
+          deathMarkKillCounter++;
+          if (skillSystem.hasDeathMark() && deathMarkKillCounter % 5 === 0) {
+            vfx.spawnGroundSlam(pos);
+            vfx.shakeCamera(0.25, 0.3);
           }
           // Award XP scaled by wave — higher waves have tougher (higher-XP) enemy mixes
           const wave = waves.currentWave;

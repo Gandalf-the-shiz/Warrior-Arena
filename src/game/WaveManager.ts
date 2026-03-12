@@ -4,27 +4,74 @@ import { Enemy, EnemyType } from '@/game/Enemy';
 import { BossEnemy } from '@/game/BossEnemy';
 import { EnemyCommander } from '@/game/EnemyCommander';
 import { HUD } from '@/ui/HUD';
+import type { SkillSystem } from '@/game/SkillSystem';
 
 // Radius at which enemies spawn around the arena edge
 const SPAWN_RADIUS = 20;
 
-export type WaveModifier = 'NONE' | 'BERSERKER' | 'ARMORED' | 'SWARM' | 'ELITE';
+export type WaveModifier =
+  | 'NONE'
+  | 'BERSERKER'
+  | 'ARMORED'
+  | 'SWARM'
+  | 'ELITE'
+  | 'PHANTOM'     // enemies become briefly invincible on low HP
+  | 'CURSED'      // enemies deal extra damage
+  | 'REINFORCED'  // wave partially replenishes once when half are dead
+  | 'CORRUPTED';  // enemies are faster and harder but drop extra loot
 
 const MODIFIER_LABELS: Record<WaveModifier, string> = {
-  NONE: '',
-  BERSERKER: '⚡ BERSERKER',
-  ARMORED: '🛡️ ARMORED',
-  SWARM: '🐝 SWARM',
-  ELITE: '👑 ELITE',
+  NONE:        '',
+  BERSERKER:   '⚡ BERSERKER',
+  ARMORED:     '🛡️ ARMORED',
+  SWARM:       '🐝 SWARM',
+  ELITE:       '👑 ELITE',
+  PHANTOM:     '👻 PHANTOM',
+  CURSED:      '☠️ CURSED',
+  REINFORCED:  '🔒 REINFORCED',
+  CORRUPTED:   '💀 CORRUPTED',
+};
+
+/**
+ * Challenge tiers — visual escalation milestones every 10 waves.
+ * Purely cosmetic / announcement; actual scaling comes from
+ * `Enemy.applyGlobalScaling(wave)`.
+ */
+export type ChallengeTier =
+  | 'NOVICE'      // waves  1–9
+  | 'VETERAN'     // waves 10–19
+  | 'CHAMPION'    // waves 20–29
+  | 'LEGEND'      // waves 30–39
+  | 'MYTHIC'      // waves 40–49
+  | 'ETERNAL';    // waves 50+
+
+function getChallengeTier(wave: number): ChallengeTier {
+  if (wave < 10)  return 'NOVICE';
+  if (wave < 20)  return 'VETERAN';
+  if (wave < 30)  return 'CHAMPION';
+  if (wave < 40)  return 'LEGEND';
+  if (wave < 50)  return 'MYTHIC';
+  return 'ETERNAL';
+}
+
+const TIER_LABELS: Record<ChallengeTier, string> = {
+  NOVICE:   '',
+  VETERAN:  '🏆 VETERAN TIER',
+  CHAMPION: '⚔️ CHAMPION TIER',
+  LEGEND:   '🔥 LEGEND TIER',
+  MYTHIC:   '💀 MYTHIC TIER',
+  ETERNAL:  '👁 ETERNAL TIER',
 };
 
 /**
  * Manages enemy waves: spawning, tracking kills, wave-banner display, and
  * wiring kill/wave counts to the HUD.
  *
- * Wave formula: `count = Math.min(2 + wave * 2, 15)`.
+ * Wave formula: `count` scales continuously — no hard cap.
  * A 3-second inter-wave pause is shown with a large "WAVE X" banner.
  * Every 5th wave spawns a boss (no normal enemies that wave).
+ * Every 10th wave triggers a Challenge Tier milestone announcement.
+ * From wave 20+ up to 2 modifiers can be active simultaneously.
  */
 export class WaveManager {
   private readonly activeEnemies: Enemy[] = [];
@@ -47,11 +94,21 @@ export class WaveManager {
   private restTimer = 0;
   private readonly REST_DURATION = 5.0;
 
-  // Current wave modifier
-  currentModifier: WaveModifier = 'NONE';
+  // Compound modifier support — up to 2 active from wave 20+
+  currentModifiers: WaveModifier[] = ['NONE'];
+
+  /** Convenience accessor for the primary modifier (first in array). */
+  get currentModifier(): WaveModifier { return this.currentModifiers[0] ?? 'NONE'; }
+
+  // Reinforced-wave tracking: has the wave already reinforced?
+  private reinforcedFired = false;
+  private reinforcedHalfCount = 0;
 
   // DOM banner element
   private readonly bannerEl: HTMLElement;
+
+  // Optional SkillSystem reference — used to apply Time Warp slow to spawned enemies
+  skillSystem: SkillSystem | null = null;
 
   // Optional spawn effect callback (set from main.ts after EnemySpawnVFX is created)
   onEnemySpawn: ((pos: THREE.Vector3) => void) | null = null;
@@ -62,11 +119,17 @@ export class WaveManager {
   // Callback when all enemies in a wave are dead (before inter-wave)
   onWaveCleared: (() => void) | null = null;
 
+  // Callback when a new Challenge Tier is reached (milestone every 10 waves)
+  onChallengeTier: ((tier: ChallengeTier) => void) | null = null;
+
   // Track the composition of the current wave for the WaveAnnouncer
   private lastComposition = '';
 
   // Flag so onWaveCleared fires only once per wave
   private waveClearedFired = false;
+
+  // Track tier so we announce only when it changes
+  private lastTier: ChallengeTier = 'NOVICE';
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -203,6 +266,17 @@ export class WaveManager {
       this.hud.updateKills(this._totalKills);
     }
 
+    // ── REINFORCED: spawn a second wave of enemies when half are killed ───
+    if (
+      this.currentModifiers.includes('REINFORCED') &&
+      !this.reinforcedFired &&
+      this.reinforcedHalfCount > 0 &&
+      this.activeEnemies.length <= Math.ceil(this.reinforcedHalfCount / 2)
+    ) {
+      this.reinforcedFired = true;
+      this.spawnReinforcementWave();
+    }
+
     // ── Check wave completion ─────────────────────────────────────────────
     const allDead = this.activeEnemies.length === 0
       && this._activeBoss === null
@@ -237,32 +311,73 @@ export class WaveManager {
   private beginInterWave(): void {
     this.waveStarted = false;
     this.waveClearedFired = false;
+    this.reinforcedFired = false;
+    this.reinforcedHalfCount = 0;
     this.waveCountdown = 3.0;
 
     const nextWave = this._currentWave + 1;
     const isBoss = nextWave % 5 === 0 && nextWave > 0;
-    // Roll wave modifier for wave 5+
+
+    // Roll wave modifiers — compound from wave 20+
     if (nextWave >= 5 && !isBoss) {
-      this.currentModifier = this.rollModifier();
+      this.currentModifiers = this.rollModifiers(nextWave);
     } else {
-      this.currentModifier = 'NONE';
+      this.currentModifiers = ['NONE'];
     }
 
-    if (isBoss) {
+    // Check for tier change milestone (every 10 waves)
+    const newTier = getChallengeTier(nextWave);
+    const isMilestone = newTier !== this.lastTier && newTier !== 'NOVICE';
+    if (isMilestone) {
+      this.lastTier = newTier;
+      this.onChallengeTier?.(newTier);
+      const tierLabel = TIER_LABELS[newTier];
+      // Show milestone banner for a moment before the wave banner
+      this.showBanner(`${tierLabel}\nWAVE ${nextWave}`, 2.8, true);
+    } else if (isBoss) {
       this.showBanner(`⚔ BOSS WAVE  ${nextWave} ⚔`, 2.4, true);
     } else {
-      const modLabel = this.currentModifier !== 'NONE' ? `\n${MODIFIER_LABELS[this.currentModifier]}` : '';
-      this.showBanner(`Wave  ${nextWave}${modLabel}`, 2.4, false);
+      const modLabels = this.currentModifiers
+        .filter(m => m !== 'NONE')
+        .map(m => MODIFIER_LABELS[m])
+        .join('  ');
+      const modLine = modLabels ? `\n${modLabels}` : '';
+      this.showBanner(`Wave  ${nextWave}${modLine}`, 2.4, false);
     }
   }
 
-  private rollModifier(): WaveModifier {
+  /**
+   * Roll 1 or 2 wave modifiers depending on wave number.
+   * From wave 20+ there is a 50% chance of a second modifier.
+   * From wave 35+ the second modifier is guaranteed.
+   */
+  private rollModifiers(wave: number): WaveModifier[] {
+    const primary = this.rollOneModifier(wave);
+    if (wave < 20 || primary === 'NONE') {
+      return [primary];
+    }
+
+    const dualChance = wave >= 35 ? 1.0 : 0.5;
+    if (Math.random() < dualChance) {
+      let secondary: WaveModifier;
+      // Avoid picking the same modifier twice
+      do {
+        secondary = this.rollOneModifier(wave);
+      } while (secondary === primary || secondary === 'NONE');
+      return [primary, secondary];
+    }
+    return [primary];
+  }
+
+  /** Roll a single modifier; higher waves unlock harder modifiers. */
+  private rollOneModifier(wave: number): WaveModifier {
+    const pool: WaveModifier[] = ['BERSERKER', 'ARMORED', 'SWARM', 'ELITE'];
+    if (wave >= 15) pool.push('PHANTOM', 'CURSED');
+    if (wave >= 25) pool.push('REINFORCED', 'CORRUPTED');
+
     const r = Math.random();
-    if (r < 0.25) return 'BERSERKER';
-    if (r < 0.50) return 'ARMORED';
-    if (r < 0.75) return 'SWARM';
-    if (r < 0.88) return 'ELITE';
-    return 'NONE'; // ~12% chance for a clear wave
+    if (r < 0.12) return 'NONE'; // ~12% clear wave chance
+    return pool[Math.floor(Math.random() * pool.length)]!;
   }
 
   private startWave(): void {
@@ -271,6 +386,34 @@ export class WaveManager {
     this.hud.updateWave(this._currentWave);
     this.hideBanner();
     this.spawnEnemies();
+  }
+
+  /**
+   * Endless base enemy count formula:
+   *   waves 1–7:   2 + wave * 2           (4 → 16)
+   *   waves 8–14:  16 + (wave - 7) * 1    (grows slowly)
+   *   waves 15+:   18 + floor(wave / 3)   (+1 every 3 waves, truly endless)
+   *
+   * SWARM triples the count; ELITE halves it.
+   * Absolute hard cap of 40 to protect performance.
+   */
+  private baseEnemyCount(): number {
+    const w = this._currentWave;
+    let count: number;
+    if (w <= 7) {
+      count = 2 + w * 2;
+    } else if (w <= 14) {
+      count = 16 + (w - 7);
+    } else {
+      count = 18 + Math.floor(w / 3);
+    }
+
+    const mods = this.currentModifiers;
+    if (mods.includes('SWARM'))  count = Math.min(count * 3, 40);
+    else if (mods.includes('ELITE')) count = Math.max(1, Math.floor(count / 2));
+    else                        count = Math.min(count, 40);
+
+    return count;
   }
 
   private spawnEnemies(): void {
@@ -291,12 +434,11 @@ export class WaveManager {
     }
 
     // ── Normal wave ────────────────────────────────────────────────────────
-    const mod = this.currentModifier;
+    const mods = this.currentModifiers;
+    const count = this.baseEnemyCount();
 
-    // Base count (SWARM doubles, ELITE halves)
-    let count = Math.min(2 + this._currentWave * 2, 15);
-    if (mod === 'SWARM') count = Math.min(count * 2, 24);
-    else if (mod === 'ELITE') count = Math.max(1, Math.floor(count / 2));
+    // Remember count for REINFORCED trigger
+    this.reinforcedHalfCount = count;
 
     // Tally counts per type for composition string
     const typeCounts: Partial<Record<EnemyType, number>> = {};
@@ -311,16 +453,26 @@ export class WaveManager {
       typeCounts[type] = (typeCounts[type] ?? 0) + 1;
 
       const enemy = new Enemy(this.scene, this.physics, sx, sz, type);
-      // Apply wave modifier stats
-      if (mod === 'BERSERKER') {
-        enemy.applyModifier(1.5, 0.7); // 50% speed, -30% HP
-      } else if (mod === 'ARMORED') {
-        enemy.applyModifier(0.8, 1.5); // -20% speed, +50% HP
-      } else if (mod === 'SWARM') {
-        enemy.applyModifier(1.0, 0.5, 0.6); // half HP, 0.6 scale
-      } else if (mod === 'ELITE') {
-        enemy.applyModifier(1.0, 2.0); // 2x HP
+
+      // Apply per-modifier stat changes (primary modifier first)
+      for (const mod of mods) {
+        if      (mod === 'BERSERKER')  enemy.applyModifier(1.5, 0.7);           // fast + frail
+        else if (mod === 'ARMORED')    enemy.applyModifier(0.8, 1.5);           // slow + tanky
+        else if (mod === 'SWARM')      enemy.applyModifier(1.0, 0.5, 0.6);      // tiny + half HP
+        else if (mod === 'ELITE')      enemy.applyModifier(1.0, 2.0);           // 2× HP
+        else if (mod === 'PHANTOM')    enemy.applyModifier(1.2, 1.0);           // 20% faster; phantom invincibility handled in AI
+        else if (mod === 'CURSED')     enemy.applyModifier(1.15, 1.2);          // faster + more HP; +damage handled by CombatSystem
+        else if (mod === 'REINFORCED') enemy.applyModifier(1.0, 1.3);           // +30% HP
+        else if (mod === 'CORRUPTED')  enemy.applyModifier(1.3, 1.3);           // +30% speed & HP
       }
+
+      // Apply endless global scaling (kicks in wave 15+)
+      enemy.applyGlobalScaling(this._currentWave);
+
+      // Apply Time Warp slow if active
+      const slowMult = this.skillSystem?.getEnemySlowMultiplier() ?? 1.0;
+      if (slowMult < 1.0) enemy.applyModifier(slowMult, 1.0);
+
       this.activeEnemies.push(enemy);
 
       // Trigger spawn VFX
@@ -330,9 +482,12 @@ export class WaveManager {
       }
     }
 
-    // ── Spawn Commander (wave 8+) ─────────────────────────────────────────
+    // ── Spawn Commander (wave 8+) — scale count with wave tier ───────────
     if (this._currentWave >= 8) {
-      const commanderCount = this._currentWave >= 15 ? 2 : 1;
+      const commanderCount = Math.min(
+        1 + Math.floor((this._currentWave - 8) / 7),
+        5, // cap at 5 simultaneous commanders
+      );
       for (let c = 0; c < commanderCount; c++) {
         const angle = (c / commanderCount) * Math.PI * 2 + Math.random();
         const sx = Math.cos(angle) * (SPAWN_RADIUS - 2);
@@ -362,16 +517,53 @@ export class WaveManager {
     this.lastComposition = parts.join(' + ');
   }
 
-  /** Choose enemy type based on current wave. */
+  /**
+   * Spawn a reinforcement wave (REINFORCED modifier) — roughly half the
+   * original count, same type distribution, no additional modifiers.
+   */
+  private spawnReinforcementWave(): void {
+    const count = Math.max(2, Math.ceil(this.reinforcedHalfCount / 2));
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.6;
+      const r = SPAWN_RADIUS + (Math.random() - 0.5) * 4;
+      const sx = Math.cos(angle) * r;
+      const sz = Math.sin(angle) * r;
+      const type = this.pickEnemyType();
+      const enemy = new Enemy(this.scene, this.physics, sx, sz, type);
+      enemy.applyGlobalScaling(this._currentWave);
+      this.activeEnemies.push(enemy);
+      if (this.onEnemySpawn) {
+        this.onEnemySpawn(new THREE.Vector3(sx, 0, sz));
+      }
+    }
+  }
+
+  /** Choose enemy type based on current wave. Higher waves skew toward tougher types. */
   private pickEnemyType(): EnemyType {
     const wave = this._currentWave;
 
-    // Necromancers appear from wave 4+, max 2 per wave
+    // Necromancers appear from wave 4+; cap scales with wave (max 4 from wave 20+)
+    const maxNecros = wave >= 20 ? 4 : wave >= 10 ? 3 : 2;
     const existingNecros = this.activeEnemies.filter(
       e => e.type === EnemyType.NECROMANCER,
     ).length;
-    const canSpawnNecro = wave >= 4 && existingNecros < 2;
+    const canSpawnNecro = wave >= 4 && existingNecros < maxNecros;
 
+    if (wave >= 25) {
+      // Very high waves: lots of Brutes + Ghouls, still some Skeletons
+      const r = Math.random();
+      if (canSpawnNecro && r < 0.15) return EnemyType.NECROMANCER;
+      if (r < 0.30) return EnemyType.SKELETON;
+      if (r < 0.58) return EnemyType.GHOUL;
+      return EnemyType.BRUTE;
+    }
+    if (wave >= 15) {
+      const r = Math.random();
+      if (canSpawnNecro && r < 0.14) return EnemyType.NECROMANCER;
+      if (r < 0.35) return EnemyType.SKELETON;
+      if (r < 0.62) return EnemyType.GHOUL;
+      return EnemyType.BRUTE;
+    }
     if (wave >= 5) {
       const r = Math.random();
       if (canSpawnNecro && r < 0.12) return EnemyType.NECROMANCER;
