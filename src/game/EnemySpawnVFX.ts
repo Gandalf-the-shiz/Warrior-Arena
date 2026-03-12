@@ -16,7 +16,7 @@ const RING_HOLD     = 0.4;
 const RING_FADE_OUT = 0.4;
 const RING_TOTAL    = RING_FADE_IN + RING_HOLD + RING_FADE_OUT;
 
-const PARTICLE_COUNT = 18;
+const PARTICLE_COUNT = 9;
 const PARTICLE_SPEED = 4.0;
 const PARTICLE_LIFE  = 0.6;
 

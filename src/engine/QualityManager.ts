@@ -47,9 +47,9 @@ export interface QualitySettings {
 // ── Adaptive thresholds ────────────────────────────────────────────────────
 
 /** Rolling-average ms above which we consider performance degraded. */
-const DEGRADE_THRESHOLD_MS   = 22;  // ~45 fps sustained
+const DEGRADE_THRESHOLD_MS   = 25;  // ~40 fps sustained
 /** Seconds above the threshold before dropping a tier. */
-const DEGRADE_HOLD_S         = 3.0;
+const DEGRADE_HOLD_S         = 1.5;
 /** Rolling-average ms below which we consider performance good enough to escalate. */
 const ESCALATE_THRESHOLD_MS  = 14;  // ~70 fps sustained
 /** Seconds below the threshold before raising a tier. */
@@ -172,6 +172,17 @@ export class QualityManager {
     }
 
     const tierIdx = TIER_ORDER.indexOf(this._tier);
+
+    // Emergency immediate drop to LOW if below ~30 fps (> 33 ms)
+    if (frameTimeAvgMs > 33 && this._tier !== 'LOW') {
+      this._tier = 'LOW';
+      this.degradeAccum  = 0;
+      this.escalateAccum = 0;
+      this.changeCooldown = CHANGE_COOLDOWN_S;
+      console.info(`[QualityManager] Emergency drop to LOW (avg ${frameTimeAvgMs.toFixed(1)} ms)`);
+      this.onTierChange?.(this.getSettings());
+      return;
+    }
 
     if (frameTimeAvgMs > DEGRADE_THRESHOLD_MS) {
       this.escalateAccum = 0;

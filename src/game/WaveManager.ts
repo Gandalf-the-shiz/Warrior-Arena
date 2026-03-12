@@ -97,6 +97,15 @@ export class WaveManager {
   // Compound modifier support — up to 2 active from wave 20+
   currentModifiers: WaveModifier[] = ['NONE'];
 
+  // Streaming spawn support — spawn enemies in batches rather than all at once
+  private streamingQueue: Array<{ type: EnemyType; sx: number; sz: number }> = [];
+  private waveTotal = 0;   // total enemies to kill for wave completion
+  private waveKilled = 0;  // enemies killed in current wave
+  /** Maximum simultaneously alive enemies (hard cap). */
+  private static readonly MAX_ALIVE = 20;
+  /** Target alive enemies — spawn new ones until we hit this. */
+  private static readonly TARGET_ALIVE = 12;
+
   /** Convenience accessor for the primary modifier (first in array). */
   get currentModifier(): WaveModifier { return this.currentModifiers[0] ?? 'NONE'; }
 
@@ -196,7 +205,7 @@ export class WaveManager {
 
   /**
    * Called every visual frame.
-   * Handles inter-wave countdown, enemy updates, and kill detection.
+   * Handles inter-wave countdown, enemy updates, kill detection, and streaming spawns.
    */
   update(delta: number, playerPos: THREE.Vector3): void {
     // ── Rest period ───────────────────────────────────────────────────────
@@ -241,6 +250,7 @@ export class WaveManager {
         enemy.dispose(this.physics);
         this.activeEnemies.splice(i, 1);
         killedThisFrame++;
+        this.waveKilled++;
       }
     }
 
@@ -249,6 +259,7 @@ export class WaveManager {
       this._activeBoss.dispose(this.physics);
       this._activeBoss = null;
       killedThisFrame++;
+      this.waveKilled++;
     }
 
     // Commander death cleanup
@@ -258,6 +269,7 @@ export class WaveManager {
         cmd.dispose(this.physics);
         this.activeCommanders.splice(i, 1);
         killedThisFrame++;
+        this.waveKilled++;
       }
     }
 
@@ -266,22 +278,39 @@ export class WaveManager {
       this.hud.updateKills(this._totalKills);
     }
 
+    // ── Streaming spawn — fill up to TARGET_ALIVE from the queue ─────────
+    if (this.streamingQueue.length > 0) {
+      const aliveCount = this.activeEnemies.length + this.activeCommanders.length;
+      if (aliveCount < WaveManager.TARGET_ALIVE) {
+        const toSpawn = Math.min(
+          WaveManager.MAX_ALIVE - aliveCount,
+          WaveManager.TARGET_ALIVE - aliveCount,
+          this.streamingQueue.length,
+        );
+        for (let s = 0; s < toSpawn; s++) {
+          const entry = this.streamingQueue.shift()!;
+          this.spawnOneEnemy(entry.type, entry.sx, entry.sz);
+        }
+      }
+    }
+
     // ── REINFORCED: spawn a second wave of enemies when half are killed ───
     if (
       this.currentModifiers.includes('REINFORCED') &&
       !this.reinforcedFired &&
       this.reinforcedHalfCount > 0 &&
-      this.activeEnemies.length <= Math.ceil(this.reinforcedHalfCount / 2)
+      this.waveKilled >= Math.ceil(this.reinforcedHalfCount / 2)
     ) {
       this.reinforcedFired = true;
       this.spawnReinforcementWave();
     }
 
     // ── Check wave completion ─────────────────────────────────────────────
+    const queueEmpty = this.streamingQueue.length === 0;
     const allDead = this.activeEnemies.length === 0
       && this._activeBoss === null
       && this.activeCommanders.length === 0;
-    if (this.waveStarted && allDead) {
+    if (this.waveStarted && queueEmpty && allDead && this.waveKilled >= this.waveTotal) {
       if (!this.waveClearedFired) {
         this.waveClearedFired = true;
         this.onWaveCleared?.();
@@ -313,6 +342,9 @@ export class WaveManager {
     this.waveClearedFired = false;
     this.reinforcedFired = false;
     this.reinforcedHalfCount = 0;
+    this.streamingQueue = [];
+    this.waveTotal = 0;
+    this.waveKilled = 0;
     this.waveCountdown = 3.0;
 
     const nextWave = this._currentWave + 1;
@@ -395,7 +427,7 @@ export class WaveManager {
    *   waves 15+:   18 + floor(wave / 3)   (+1 every 3 waves, truly endless)
    *
    * SWARM triples the count; ELITE halves it.
-   * Absolute hard cap of 40 to protect performance.
+   * Absolute hard cap of 20 to protect performance.
    */
   private baseEnemyCount(): number {
     const w = this._currentWave;
@@ -409,9 +441,9 @@ export class WaveManager {
     }
 
     const mods = this.currentModifiers;
-    if (mods.includes('SWARM'))  count = Math.min(count * 3, 40);
+    if (mods.includes('SWARM'))  count = Math.min(count * 3, 20);
     else if (mods.includes('ELITE')) count = Math.max(1, Math.floor(count / 2));
-    else                        count = Math.min(count, 40);
+    else                        count = Math.min(count, 20);
 
     return count;
   }
@@ -427,66 +459,46 @@ export class WaveManager {
       this._activeBoss = boss;
       this.onBossSpawned?.(boss);
       this.lastComposition = '⚔ DARK CHAMPION ⚔';
+      this.waveTotal = 1;
       if (this.onEnemySpawn) {
         this.onEnemySpawn(new THREE.Vector3(sx, 0, sz));
       }
       return;
     }
 
-    // ── Normal wave ────────────────────────────────────────────────────────
-    const mods = this.currentModifiers;
+    // ── Normal wave — build a streaming queue ─────────────────────────────
     const count = this.baseEnemyCount();
 
     // Remember count for REINFORCED trigger
     this.reinforcedHalfCount = count;
+    this.waveTotal = count;
 
     // Tally counts per type for composition string
     const typeCounts: Partial<Record<EnemyType, number>> = {};
 
+    // Build the queue of enemies to spawn in batches
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
       const r = SPAWN_RADIUS + (Math.random() - 0.5) * 4;
       const sx = Math.cos(angle) * r;
       const sz = Math.sin(angle) * r;
-
       const type = this.pickEnemyType();
       typeCounts[type] = (typeCounts[type] ?? 0) + 1;
+      this.streamingQueue.push({ type, sx, sz });
+    }
 
-      const enemy = new Enemy(this.scene, this.physics, sx, sz, type);
-
-      // Apply per-modifier stat changes (primary modifier first)
-      for (const mod of mods) {
-        if      (mod === 'BERSERKER')  enemy.applyModifier(1.5, 0.7);           // fast + frail
-        else if (mod === 'ARMORED')    enemy.applyModifier(0.8, 1.5);           // slow + tanky
-        else if (mod === 'SWARM')      enemy.applyModifier(1.0, 0.5, 0.6);      // tiny + half HP
-        else if (mod === 'ELITE')      enemy.applyModifier(1.0, 2.0);           // 2× HP
-        else if (mod === 'PHANTOM')    enemy.applyModifier(1.2, 1.0);           // 20% faster; phantom invincibility handled in AI
-        else if (mod === 'CURSED')     enemy.applyModifier(1.15, 1.2);          // faster + more HP; +damage handled by CombatSystem
-        else if (mod === 'REINFORCED') enemy.applyModifier(1.0, 1.3);           // +30% HP
-        else if (mod === 'CORRUPTED')  enemy.applyModifier(1.3, 1.3);           // +30% speed & HP
-      }
-
-      // Apply endless global scaling (kicks in wave 15+)
-      enemy.applyGlobalScaling(this._currentWave);
-
-      // Apply Time Warp slow if active
-      const slowMult = this.skillSystem?.getEnemySlowMultiplier() ?? 1.0;
-      if (slowMult < 1.0) enemy.applyModifier(slowMult, 1.0);
-
-      this.activeEnemies.push(enemy);
-
-      // Trigger spawn VFX
-      if (this.onEnemySpawn) {
-        const pos = new THREE.Vector3(sx, 0, sz);
-        this.onEnemySpawn(pos);
-      }
+    // Initial burst — spawn up to TARGET_ALIVE immediately
+    const initialSpawn = Math.min(WaveManager.TARGET_ALIVE, this.streamingQueue.length);
+    for (let i = 0; i < initialSpawn; i++) {
+      const entry = this.streamingQueue.shift()!;
+      this.spawnOneEnemy(entry.type, entry.sx, entry.sz);
     }
 
     // ── Spawn Commander (wave 8+) — scale count with wave tier ───────────
     if (this._currentWave >= 8) {
       const commanderCount = Math.min(
         1 + Math.floor((this._currentWave - 8) / 7),
-        5, // cap at 5 simultaneous commanders
+        2, // cap at 2 simultaneous commanders
       );
       for (let c = 0; c < commanderCount; c++) {
         const angle = (c / commanderCount) * Math.PI * 2 + Math.random();
@@ -494,6 +506,7 @@ export class WaveManager {
         const sz = Math.sin(angle) * (SPAWN_RADIUS - 2);
         const commander = new EnemyCommander(this.scene, this.physics, sx, sz);
         this.activeCommanders.push(commander);
+        this.waveTotal++; // commanders also count toward wave total
         if (this.onEnemySpawn) {
           this.onEnemySpawn(new THREE.Vector3(sx, 0, sz));
         }
@@ -517,24 +530,52 @@ export class WaveManager {
     this.lastComposition = parts.join(' + ');
   }
 
+  /** Spawn a single enemy and apply all active modifiers. */
+  private spawnOneEnemy(type: EnemyType, sx: number, sz: number): void {
+    const mods = this.currentModifiers;
+    const enemy = new Enemy(this.scene, this.physics, sx, sz, type);
+
+    // Apply per-modifier stat changes
+    for (const mod of mods) {
+      if      (mod === 'BERSERKER')  enemy.applyModifier(1.5, 0.7);
+      else if (mod === 'ARMORED')    enemy.applyModifier(0.8, 1.5);
+      else if (mod === 'SWARM')      enemy.applyModifier(1.0, 0.5, 0.6);
+      else if (mod === 'ELITE')      enemy.applyModifier(1.0, 2.0);
+      else if (mod === 'PHANTOM')    enemy.applyModifier(1.2, 1.0);
+      else if (mod === 'CURSED')     enemy.applyModifier(1.15, 1.2);
+      else if (mod === 'REINFORCED') enemy.applyModifier(1.0, 1.3);
+      else if (mod === 'CORRUPTED')  enemy.applyModifier(1.3, 1.3);
+    }
+
+    // Apply endless global scaling (kicks in wave 15+)
+    enemy.applyGlobalScaling(this._currentWave);
+
+    // Apply Time Warp slow if active
+    const slowMult = this.skillSystem?.getEnemySlowMultiplier() ?? 1.0;
+    if (slowMult < 1.0) enemy.applyModifier(slowMult, 1.0);
+
+    this.activeEnemies.push(enemy);
+
+    // Trigger spawn VFX
+    if (this.onEnemySpawn) {
+      this.onEnemySpawn(new THREE.Vector3(sx, 0, sz));
+    }
+  }
+
   /**
    * Spawn a reinforcement wave (REINFORCED modifier) — roughly half the
    * original count, same type distribution, no additional modifiers.
    */
   private spawnReinforcementWave(): void {
     const count = Math.max(2, Math.ceil(this.reinforcedHalfCount / 2));
+    this.waveTotal += count;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.6;
       const r = SPAWN_RADIUS + (Math.random() - 0.5) * 4;
       const sx = Math.cos(angle) * r;
       const sz = Math.sin(angle) * r;
       const type = this.pickEnemyType();
-      const enemy = new Enemy(this.scene, this.physics, sx, sz, type);
-      enemy.applyGlobalScaling(this._currentWave);
-      this.activeEnemies.push(enemy);
-      if (this.onEnemySpawn) {
-        this.onEnemySpawn(new THREE.Vector3(sx, 0, sz));
-      }
+      this.streamingQueue.push({ type, sx, sz });
     }
   }
 

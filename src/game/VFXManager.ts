@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import { CameraController } from '@/game/CameraController';
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const BLOOD_PARTICLE_COUNT = 60;
-const BLOOD_BURST_POOL = 8;
+const BLOOD_PARTICLE_COUNT = 30;
+const BLOOD_BURST_POOL = 4;
 const BLOOD_LIFETIME = 0.8; // seconds
 const GRAVITY = 14; // m/s²
 
-const MAX_DECALS = 50;
-const DECAL_LIFETIME = 30; // seconds
+const MAX_DECALS = 20;
+const DECAL_LIFETIME = 10; // seconds
 
 // Sword trail
 const TRAIL_HISTORY = 12; // number of tip-position samples kept
@@ -19,11 +19,11 @@ const SPARK_POOL = 6;
 const SPARK_LIFETIME = 0.3;
 
 // Gore chunks (small physics-lite gore pieces on heavy dismemberment)
-const MAX_GORE_CHUNKS = 20;
-const GORE_CHUNK_LIFETIME = 5; // seconds
+const MAX_GORE_CHUNKS = 8;
+const GORE_CHUNK_LIFETIME = 2; // seconds
 
 // Screen blood splatter (DOM overlay droplets on close-range kills)
-const MAX_SCREEN_BLOOD_DROPS = 12;
+const MAX_SCREEN_BLOOD_DROPS = 6;
 const SCREEN_BLOOD_LIFETIME = 1.2; // seconds
 
 // ── Interfaces ────────────────────────────────────────────────────────────────

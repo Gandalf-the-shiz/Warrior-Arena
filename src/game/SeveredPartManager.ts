@@ -3,14 +3,14 @@ import { PhysicsWorld } from '@/engine/PhysicsWorld';
 import type RAPIER_TYPE from '@dimforge/rapier3d-compat';
 
 // Maximum number of simultaneously active severed parts for performance
-const MAX_SEVERED_PARTS = 30;
+const MAX_SEVERED_PARTS = 10;
 
 // How long severed parts persist before despawning (seconds)
-const PART_LIFETIME_MIN = 8;
-const PART_LIFETIME_RANGE = 2;
+const PART_LIFETIME_MIN = 3;
+const PART_LIFETIME_RANGE = 1;
 
 // How long blood trail emits (seconds)
-const BLOOD_TRAIL_DURATION = 2.0;
+const BLOOD_TRAIL_DURATION = 1.0;
 
 // Fade-out duration at end of life (seconds)
 const FADE_DURATION = 1.0;

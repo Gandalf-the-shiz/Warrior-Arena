@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import { Enemy, EnemyType } from '@/game/Enemy';
 
 // Canvas / display constants
-const SIZE         = 150; // px – total canvas diameter
+const SIZE         = 75;  // px – total canvas diameter (50% smaller)
 const RADIUS       = SIZE / 2;
 const ARENA_RADIUS = 30;  // world units (60-unit-diameter arena)
-// Leave an 8 px border inside the circle so dots are never cut off
-const SCALE        = (RADIUS - 10) / ARENA_RADIUS; // world units → pixels
+// Leave a 5 px border inside the circle so dots are never cut off
+const SCALE        = (RADIUS - 5) / ARENA_RADIUS; // world units → pixels
 
 // Dot colours per enemy type
 const DOT_COLOR: Record<EnemyType, string> = {
@@ -35,13 +35,13 @@ export class Minimap {
     const container = document.createElement('div');
     Object.assign(container.style, {
       position: 'fixed',
-      top: '16px',
-      left: '16px',
+      top: '60px',
+      right: '16px',
       width: `${SIZE}px`,
       height: `${SIZE}px`,
       borderRadius: '50%',
       overflow: 'hidden',
-      border: '2px solid rgba(232,213,160,0.28)',
+      border: '1px solid rgba(232,213,160,0.28)',
       zIndex: '10',
       pointerEvents: 'none',
     });
@@ -84,7 +84,7 @@ export class Minimap {
 
     // ── Arena boundary ring ───────────────────────────────────────────────────
     ctx.beginPath();
-    ctx.arc(cx, cy, RADIUS - 10, 0, Math.PI * 2);
+    ctx.arc(cx, cy, RADIUS - 5, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(232,213,160,0.18)';
     ctx.lineWidth = 1;
     ctx.stroke();
@@ -92,7 +92,7 @@ export class Minimap {
     // ── Enemy dots ────────────────────────────────────────────────────────────
     const cosYaw = Math.cos(-playerYaw);
     const sinYaw = Math.sin(-playerYaw);
-    const maxDot = RADIUS - 5;
+    const maxDot = RADIUS - 3;
 
     for (const enemy of enemies) {
       if (enemy.isDead) continue;
@@ -117,7 +117,7 @@ export class Minimap {
       }
 
       ctx.beginPath();
-      ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+      ctx.arc(sx, sy, 2, 0, Math.PI * 2);
       ctx.fillStyle = DOT_COLOR[enemy.type];
       ctx.fill();
     }
@@ -126,9 +126,9 @@ export class Minimap {
     ctx.save();
     ctx.translate(cx, cy);
     ctx.beginPath();
-    ctx.moveTo(0, -7);
-    ctx.lineTo(-4, 5);
-    ctx.lineTo(4, 5);
+    ctx.moveTo(0, -4);
+    ctx.lineTo(-2.5, 3);
+    ctx.lineTo(2.5, 3);
     ctx.closePath();
     ctx.fillStyle = '#ffffff';
     ctx.fill();
