@@ -82,6 +82,10 @@ export class WarriorModel {
   readonly headGroup: THREE.Group;
   readonly leftArmGroup: THREE.Group;
   readonly rightArmGroup: THREE.Group;
+  /** Forearm sub-group pivoting at the left elbow joint. */
+  readonly leftForearmGroup: THREE.Group;
+  /** Forearm sub-group pivoting at the right elbow joint. */
+  readonly rightForearmGroup: THREE.Group;
   readonly leftLegGroup: THREE.Group;
   readonly rightLegGroup: THREE.Group;
   readonly swordGroup: THREE.Group;
@@ -288,17 +292,22 @@ export class WarriorModel {
     leftElbow.position.set(0, -0.54, 0.03);
     this.leftArmGroup.add(leftElbow);
 
+    // Forearm sub-group pivoting at the elbow joint
+    this.leftForearmGroup = new THREE.Group();
+    this.leftForearmGroup.position.set(0, -0.54, 0);
+
     const leftForearm = mkMesh(new THREE.BoxGeometry(0.125, 0.28, 0.145), MAT_IRON);
-    leftForearm.position.set(0, -0.64, 0);
-    this.leftArmGroup.add(leftForearm);
+    leftForearm.position.set(0, -0.10, 0);
+    this.leftForearmGroup.add(leftForearm);
 
     const leftGauntlet = mkMesh(new THREE.BoxGeometry(0.145, 0.145, 0.145), MAT_GAUNTLET);
-    leftGauntlet.position.set(0, -0.79, 0);
-    this.leftArmGroup.add(leftGauntlet);
+    leftGauntlet.position.set(0, -0.25, 0);
+    this.leftForearmGroup.add(leftGauntlet);
 
-    // Gauntlet knuckle strips
-    addKnuckleStrips(this.leftArmGroup, -0.79, MAT_IRON);
+    // Gauntlet knuckle strips (relative to forearm group)
+    addKnuckleStrips(this.leftForearmGroup, -0.25, MAT_IRON);
 
+    this.leftArmGroup.add(this.leftForearmGroup);
     this.torsoGroup.add(this.leftArmGroup);
 
     // ── Shield (kite shield) ──────────────────────────────────────────────
@@ -331,9 +340,9 @@ export class WarriorModel {
       rim.position.set(side * 0.15, 0, 0.01);
       this.shieldGroup.add(rim);
     }
-    this.shieldGroup.position.set(0, -0.68, 0.09);
+    this.shieldGroup.position.set(0, -0.14, 0.09);
     this.shieldGroup.visible = false;
-    this.leftArmGroup.add(this.shieldGroup);
+    this.leftForearmGroup.add(this.shieldGroup);
 
     // ── Right arm ─────────────────────────────────────────────────────────
     this.rightArmGroup = new THREE.Group();
@@ -350,16 +359,21 @@ export class WarriorModel {
     rightElbow.position.set(0, -0.54, 0.03);
     this.rightArmGroup.add(rightElbow);
 
+    // Forearm sub-group pivoting at the elbow joint
+    this.rightForearmGroup = new THREE.Group();
+    this.rightForearmGroup.position.set(0, -0.54, 0);
+
     const rightForearm = mkMesh(new THREE.BoxGeometry(0.125, 0.28, 0.145), MAT_IRON);
-    rightForearm.position.set(0, -0.64, 0);
-    this.rightArmGroup.add(rightForearm);
+    rightForearm.position.set(0, -0.10, 0);
+    this.rightForearmGroup.add(rightForearm);
 
     const rightGauntlet = mkMesh(new THREE.BoxGeometry(0.145, 0.145, 0.145), MAT_GAUNTLET);
-    rightGauntlet.position.set(0, -0.79, 0);
-    this.rightArmGroup.add(rightGauntlet);
+    rightGauntlet.position.set(0, -0.25, 0);
+    this.rightForearmGroup.add(rightGauntlet);
 
-    addKnuckleStrips(this.rightArmGroup, -0.79, MAT_IRON);
+    addKnuckleStrips(this.rightForearmGroup, -0.25, MAT_IRON);
 
+    this.rightArmGroup.add(this.rightForearmGroup);
     this.torsoGroup.add(this.rightArmGroup);
 
     // ── Left leg ──────────────────────────────────────────────────────────
@@ -448,9 +462,9 @@ export class WarriorModel {
 
     // ── Red 2-handed Broadsword ───────────────────────────────────────────────
     this.swordGroup = new THREE.Group();
-    // Held centrally at 45° angle on the torso (2-handed grip)
-    this.swordGroup.position.set(0.08, -0.10, 0.35);
-    this.swordGroup.rotation.set(-Math.PI * 0.75, 0, Math.PI / 4);
+    // Held in front of chest at a ready stance (blade up, slightly forward)
+    this.swordGroup.position.set(0.18, 0.05, 0.28);
+    this.swordGroup.rotation.set(-0.3, 0, 0.15);
 
     // Main blade — wide broadsword fuller
     const blade = mkMesh(new THREE.BoxGeometry(0.14, 1.70, 0.018), MAT_BLADE);
@@ -510,14 +524,14 @@ export class WarriorModel {
     pommelGem.position.set(0, -0.59, 0);
     this.swordGroup.add(pommelGem);
 
-    // Attach sword to torsoGroup (2-handed, centered on body)
+    // Attach sword to torsoGroup (2-handed, held in front of chest)
     this.torsoGroup.add(this.swordGroup);
 
-    // Angle both arms inward/forward toward the sword grip for a 2-handed pose
-    this.leftArmGroup.rotation.x  = 0.4;
-    this.leftArmGroup.rotation.z  = 0.15;
-    this.rightArmGroup.rotation.x = 0.4;
-    this.rightArmGroup.rotation.z = -0.15;
+    // Default 2-handed grip pose: shoulders angled forward/inward, elbows bent
+    this.leftArmGroup.rotation.set(0.5, 0, 0.35);
+    this.leftForearmGroup.rotation.x  = -1.0;
+    this.rightArmGroup.rotation.set(0.4, 0, -0.25);
+    this.rightForearmGroup.rotation.x = -0.9;
 
     // ── Assemble ──────────────────────────────────────────────────────────
     this.group.add(this.torsoGroup);
