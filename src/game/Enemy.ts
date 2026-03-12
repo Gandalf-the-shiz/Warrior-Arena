@@ -241,9 +241,6 @@ export class Enemy {
   private readonly rightLegGroup: THREE.Group;
   private readonly weaponGroup: THREE.Group;
 
-  // Head point light for visibility in the dark
-  private readonly headLight: THREE.PointLight;
-
   private readonly targetRotation = new THREE.Quaternion();
   private readonly spawnX: number;
   private readonly spawnZ: number;
@@ -398,17 +395,6 @@ export class Enemy {
       eyeR.position.set(0.058, 0.022, 0.11);
       this.headGroup.add(eyeR);
     }
-
-    // Dim head point light — makes the enemy glow in the dark
-    const HEAD_LIGHT_COLORS: Record<EnemyType, number> = {
-      [EnemyType.SKELETON]:    0xff0000,
-      [EnemyType.GHOUL]:       0x00ff44,
-      [EnemyType.BRUTE]:       0xff4400,
-      [EnemyType.NECROMANCER]: 0x00ff55,
-    };
-    this.headLight = new THREE.PointLight(HEAD_LIGHT_COLORS[enemyType], 0.3, 4, 2);
-    this.headLight.position.set(0, 0, 0);
-    this.headGroup.add(this.headLight);
 
     this.torsoGroup.add(this.headGroup);
 
@@ -1014,7 +1000,6 @@ export class Enemy {
 
   /** Remove physics body and Three.js group from the world. */
   dispose(physics: PhysicsWorld): void {
-    this.headGroup.remove(this.headLight);
     this.scene.remove(this.group);
     // Clean up any still-fading detached limbs
     for (const limb of this.detachedLimbs) {

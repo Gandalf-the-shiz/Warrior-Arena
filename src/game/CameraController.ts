@@ -5,7 +5,7 @@ import { PhysicsWorld } from '@/engine/PhysicsWorld';
 const MIN_PITCH = -20 * (Math.PI / 180); // −20°
 const MAX_PITCH = 60 * (Math.PI / 180);  //  60°
 const CAM_LERP = 0.1;
-const SENSITIVITY = 0.003;
+const SENSITIVITY = 0.00165;
 const MOUSE_YAW_DECAY = 3.0; // rate at which mouse orbit offset decays back to 0
 
 /**
