@@ -294,12 +294,12 @@ export class WaveManager {
       }
     }
 
-    // ── REINFORCED: spawn a second wave of enemies when half are killed ───
+    // ── REINFORCED: spawn a second wave of enemies when half of spawned enemies are killed ──
     if (
       this.currentModifiers.includes('REINFORCED') &&
       !this.reinforcedFired &&
       this.reinforcedHalfCount > 0 &&
-      this.waveKilled >= Math.ceil(this.reinforcedHalfCount / 2)
+      this.waveKilled >= Math.ceil((this.waveTotal - this.streamingQueue.length) / 2)
     ) {
       this.reinforcedFired = true;
       this.spawnReinforcementWave();
@@ -310,7 +310,7 @@ export class WaveManager {
     const allDead = this.activeEnemies.length === 0
       && this._activeBoss === null
       && this.activeCommanders.length === 0;
-    if (this.waveStarted && queueEmpty && allDead && this.waveKilled >= this.waveTotal) {
+    if (this.waveStarted && queueEmpty && allDead) {
       if (!this.waveClearedFired) {
         this.waveClearedFired = true;
         this.onWaveCleared?.();
