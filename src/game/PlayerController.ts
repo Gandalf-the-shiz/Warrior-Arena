@@ -101,6 +101,20 @@ export class PlayerController {
   private isGrounded = false;
   private readonly targetRotation = new THREE.Quaternion();
 
+  // ── Cached reusable objects (avoid per-frame allocations) ─────────────────
+  private readonly _cachedPosition = new THREE.Vector3();
+  private readonly _cachedForward = new THREE.Vector3();
+  private readonly _cachedEuler = new THREE.Euler();
+
+  // ── Attack state set (O(1) look-up vs Array.includes) ────────────────────
+  private static readonly ATTACK_STATES = new Set([
+    'ATTACK_LIGHT_1',
+    'ATTACK_LIGHT_2',
+    'ATTACK_LIGHT_3',
+    'ATTACK_HEAVY',
+    'DASH_ATTACK',
+  ] as const);
+
   // Footstep dust
   private readonly dustBursts: DustBurst[] = [];
   private dustTimer = 0;
@@ -190,7 +204,7 @@ export class PlayerController {
 
       // Rotate character toward actual world movement direction
       const angle = Math.atan2(wx, wz);
-      this.targetRotation.setFromEuler(new THREE.Euler(0, angle, 0));
+      this.targetRotation.setFromEuler(this._cachedEuler.set(0, angle, 0));
     } else {
       const vel = this.body.linvel();
       this.body.setLinvel({ x: vel.x * 0.7, y: vel.y, z: vel.z * 0.7 }, true);
@@ -247,13 +261,9 @@ export class PlayerController {
     const isMoving = speed > 0.05;
 
     const current = this.anim.currentState;
-    const isAttacking = [
-      AnimState.ATTACK_LIGHT_1,
-      AnimState.ATTACK_LIGHT_2,
-      AnimState.ATTACK_LIGHT_3,
-      AnimState.ATTACK_HEAVY,
-      AnimState.DASH_ATTACK,
-    ].includes(current);
+    const isAttacking = PlayerController.ATTACK_STATES.has(
+      current as 'ATTACK_LIGHT_1' | 'ATTACK_LIGHT_2' | 'ATTACK_LIGHT_3' | 'ATTACK_HEAVY' | 'DASH_ATTACK',
+    );
 
     // ── Blocking state machine ────────────────────────────────────────────
     // Decay shield bash cooldown
@@ -363,14 +373,14 @@ export class PlayerController {
 
   getPosition(): THREE.Vector3 {
     const p = this.body.translation();
-    return new THREE.Vector3(p.x, p.y, p.z);
+    return this._cachedPosition.set(p.x, p.y, p.z);
   }
 
   /** World-space forward direction of the player (the direction they face). */
   getForward(): THREE.Vector3 {
-    const fwd = new THREE.Vector3(0, 0, 1);
-    fwd.applyQuaternion(this.mesh.quaternion);
-    return fwd;
+    this._cachedForward.set(0, 0, 1);
+    this._cachedForward.applyQuaternion(this.mesh.quaternion);
+    return this._cachedForward;
   }
 
   /**
@@ -378,8 +388,8 @@ export class PlayerController {
    * Used by CameraController to lock the camera directly behind the character.
    */
   getFacingYaw(): number {
-    const euler = new THREE.Euler().setFromQuaternion(this.mesh.quaternion, 'YXZ');
-    return euler.y;
+    this._cachedEuler.setFromQuaternion(this.mesh.quaternion, 'YXZ');
+    return this._cachedEuler.y;
   }
 
   /**
@@ -393,13 +403,9 @@ export class PlayerController {
 
   /** Returns true while any attack animation is active. */
   isAttackingState(): boolean {
-    return [
-      AnimState.ATTACK_LIGHT_1,
-      AnimState.ATTACK_LIGHT_2,
-      AnimState.ATTACK_LIGHT_3,
-      AnimState.ATTACK_HEAVY,
-      AnimState.DASH_ATTACK,
-    ].includes(this.anim.currentState);
+    return PlayerController.ATTACK_STATES.has(
+      this.anim.currentState as 'ATTACK_LIGHT_1' | 'ATTACK_LIGHT_2' | 'ATTACK_LIGHT_3' | 'ATTACK_HEAVY' | 'DASH_ATTACK',
+    );
   }
 
   /**
@@ -622,7 +628,11 @@ export class PlayerController {
         burst.active = false;
         mat.opacity = 0;
       } else {
-        const maxAge = Math.max(...Array.from(burst.ages));
+        // Find max age without allocating a temporary array
+        let maxAge = 0;
+        for (let i = 0; i < DUST_PARTICLE_COUNT; i++) {
+          if (burst.ages[i]! > maxAge) maxAge = burst.ages[i]!;
+        }
         mat.opacity = Math.max(0, 0.55 * (1 - maxAge / burst.life));
       }
     }

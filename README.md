@@ -226,7 +226,21 @@ All assets are generated at runtime — zero file loading:
 |---|---|---|
 | **PR 1** — PBR Graphics Foundation | ✅ Complete | Upgraded `ArmorDegradation` with canvas blood + normal-map dents; `spawnSparks()` in VFXManager; better shadow maps; full wiring in PlayerController / CombatSystem / main.ts; README |
 | **PR 2** — Dismemberment Overhaul | ✅ Complete | `DismembermentSystem`, `SeveredPartManager`, arterial spray VFX, gore chunks, finisher sequences |
-| **PR 3** — Dynamic Crowd + Audio | 🔜 Pending | Crowd reaction system, spatial audio positioning, enhanced procedural crowd synthesis |
+| **PR 3** — Performance & Stability | ✅ Complete | `PerformanceMonitor`, `QualityManager`, `ErrorHandler`, GameLoop resilience, PlayerController hot-path optimizations, docs |
+| **PR 4** — Dynamic Crowd + Audio | 🔜 Pending | Crowd reaction system, spatial audio positioning, enhanced procedural crowd synthesis |
+
+---
+
+## ⚡ Performance & Quality
+
+Press **`P`** during gameplay to toggle the performance overlay.
+
+Four adaptive quality tiers (LOW / MEDIUM / HIGH / ULTRA) adjust pixel ratio,
+shadow maps, post-processing passes, and UI update rates automatically based
+on sustained frame time.
+
+See **[docs/PERFORMANCE.md](docs/PERFORMANCE.md)** for the full architecture
+guide, quality tier table, profiling instructions, and known trade-offs.
 
 ---
 
