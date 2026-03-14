@@ -457,9 +457,9 @@ export class AnimationStateMachine {
       leftArmGroup.rotation.z = this._lerp(0.60, 0.25, pp);
       leftForearmGroup.rotation.x = this._lerp(-0.55, -1.05, pp);
 
-      // Sword sweeps upward — arc stays in front of body
+      // Sword sweeps upward — arc stays in front of body (positive x keeps blade forward)
       swordGroup.rotation.z = this._lerp(0.25, -0.40, pp);
-      swordGroup.rotation.x = this._lerp(0.20, -0.50, pp);
+      swordGroup.rotation.x = this._lerp(0.20, 0.35, pp);
 
       leftLegGroup.rotation.x = this._lerp(0.15, 0, pp);
     } else {
@@ -480,7 +480,7 @@ export class AnimationStateMachine {
       leftForearmGroup.rotation.x = this._lerp(-1.05, -0.15, pp);
 
       swordGroup.rotation.z = this._lerp(-0.40, -0.10, pp);
-      swordGroup.rotation.x = this._lerp(-0.50, 0.15, pp);
+      swordGroup.rotation.x = this._lerp(0.35, 0.15, pp);
 
       leftLegGroup.rotation.x = 0;
     }
@@ -511,8 +511,8 @@ export class AnimationStateMachine {
       leftArmGroup.rotation.z = this._lerp(0.20, 0.10, pp);
       leftForearmGroup.rotation.x = this._lerp(-0.15, -0.15, pp);
 
-      // Sword rises overhead in forearm space — blade points backward behind head
-      swordGroup.rotation.x = this._lerp(0.15, -1.80, pp);
+      // Sword rises overhead in forearm space — blade stays pitched forward (positive x = forward tilt)
+      swordGroup.rotation.x = this._lerp(0.15, 0.80, pp);
       swordGroup.rotation.z = this._lerp(-0.10, 0, pp);
 
       // Warrior rises slightly, torso arches back
@@ -538,7 +538,7 @@ export class AnimationStateMachine {
       leftForearmGroup.rotation.x = this._lerp(-0.15, -1.20, pp);
 
       // Sword swings down and forward in forearm space — arc stays in front
-      swordGroup.rotation.x = this._lerp(-1.80, 1.00, pp);
+      swordGroup.rotation.x = this._lerp(0.80, 1.00, pp);
       swordGroup.rotation.z = 0;
 
       // Torso CRUNCHES forward — full bodyweight into the strike
@@ -592,15 +592,15 @@ export class AnimationStateMachine {
     // Vertical bob — dip at start, rise during spin
     torsoGroup.position.y = 0.05 - Math.sin(p * Math.PI) * 0.06;
 
-    // Both arms extend outward during spin — locked wide for maximum reach
+    // Both arms converge on sword grip — left arm reaches across body to hold hilt
     rightArmGroup.rotation.x = 0.30;
     rightArmGroup.rotation.z = -0.60;
     leftArmGroup.rotation.x  = 0.30;
-    leftArmGroup.rotation.z  = 0.60;
+    leftArmGroup.rotation.z  = -0.25;
 
-    // Forearms nearly straight — full extension for sweep radius
+    // Forearms reach toward grip — left elbow bent to close the distance to hilt
     rightForearmGroup.rotation.x = -0.25;
-    leftForearmGroup.rotation.x  = -0.35;
+    leftForearmGroup.rotation.x  = -0.70;
 
     // Sword extends outward in forearm-local space for maximum reach
     swordGroup.rotation.x = 0.20;
@@ -710,7 +710,7 @@ export class AnimationStateMachine {
     leftForearmGroup.rotation.x  = -0.15 + swing * 0.20;
 
     // Sword points straight ahead in forearm-local space — blade forward, no body clipping
-    swordGroup.rotation.x = 0.15 - swing * 1.00;
+    swordGroup.rotation.x = 0.15 + swing * 0.20;
     swordGroup.rotation.z = -0.10 * (1 - swing);
 
     torsoGroup.scale.set(1, 1, 1);
