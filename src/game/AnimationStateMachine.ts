@@ -386,7 +386,8 @@ export class AnimationStateMachine {
       headGroup.rotation.y = this._lerp(-0.15, 0.10, pp);
     } else {
       // Phase 3: Follow-through and recovery
-      const pp = this._easeOutCubic((p - 0.60) / 0.40);
+      const raw = (p - 0.60) / 0.40;
+      const pp = this._easeOutCubic(raw);
       torsoGroup.rotation.y = this._lerp(0.50, 0, pp);
       torsoGroup.rotation.z = this._lerp(-0.06, 0, pp);
       torsoGroup.position.y = 0.05;
@@ -396,10 +397,18 @@ export class AnimationStateMachine {
       rightArmGroup.rotation.z = this._lerp(0.50, -0.40, pp);
       rightForearmGroup.rotation.x = this._lerp(-0.85, -0.55, pp);
 
-      // Left arm releases and returns to side
-      leftArmGroup.rotation.x = this._lerp(0.60, 0.00, pp);
-      leftArmGroup.rotation.z = this._lerp(0.40, 0.20, pp);
-      leftForearmGroup.rotation.x = this._lerp(-0.90, -0.15, pp);
+      // Left arm: stays near grip for first 65% of recovery, releases in final 35%
+      if (raw < 0.65) {
+        const pp2 = this._easeOutCubic(raw / 0.65);
+        leftArmGroup.rotation.x = this._lerp(0.60, 0.48, pp2);
+        leftArmGroup.rotation.z = this._lerp(0.40, 0.24, pp2);
+        leftForearmGroup.rotation.x = this._lerp(-0.90, -0.72, pp2);
+      } else {
+        const pp2 = this._easeOutCubic((raw - 0.65) / 0.35);
+        leftArmGroup.rotation.x = this._lerp(0.48, 0.00, pp2);
+        leftArmGroup.rotation.z = this._lerp(0.24, 0.20, pp2);
+        leftForearmGroup.rotation.x = this._lerp(-0.72, -0.15, pp2);
+      }
 
       swordGroup.rotation.x = this._lerp(0.30, 0.90, pp);
       swordGroup.rotation.z = this._lerp(-0.15, -0.10, pp);
@@ -464,7 +473,8 @@ export class AnimationStateMachine {
       leftLegGroup.rotation.x = this._lerp(0.15, 0, pp);
     } else {
       // Phase 3: Recovery — sword high on right side, arms return
-      const pp = this._easeOutCubic((p - 0.55) / 0.45);
+      const raw = (p - 0.55) / 0.45;
+      const pp = this._easeOutCubic(raw);
       torsoGroup.rotation.y = this._lerp(-0.45, 0, pp);
       torsoGroup.position.y = this._lerp(0.08, 0.05, pp);
       torsoGroup.rotation.z = 0;
@@ -474,10 +484,18 @@ export class AnimationStateMachine {
       rightArmGroup.rotation.z = this._lerp(-0.25, -0.40, pp);
       rightForearmGroup.rotation.x = this._lerp(-1.00, -0.55, pp);
 
-      // Left arm releases and falls back to side
-      leftArmGroup.rotation.x = this._lerp(0.65, 0.00, pp);
-      leftArmGroup.rotation.z = this._lerp(0.25, 0.20, pp);
-      leftForearmGroup.rotation.x = this._lerp(-1.05, -0.15, pp);
+      // Left arm: stays near grip for first 65% of recovery, releases in final 35%
+      if (raw < 0.65) {
+        const pp2 = this._easeOutCubic(raw / 0.65);
+        leftArmGroup.rotation.x = this._lerp(0.65, 0.52, pp2);
+        leftArmGroup.rotation.z = this._lerp(0.25, 0.22, pp2);
+        leftForearmGroup.rotation.x = this._lerp(-1.05, -0.82, pp2);
+      } else {
+        const pp2 = this._easeOutCubic((raw - 0.65) / 0.35);
+        leftArmGroup.rotation.x = this._lerp(0.52, 0.00, pp2);
+        leftArmGroup.rotation.z = this._lerp(0.22, 0.20, pp2);
+        leftForearmGroup.rotation.x = this._lerp(-0.82, -0.15, pp2);
+      }
 
       swordGroup.rotation.z = this._lerp(-0.40, -0.10, pp);
       swordGroup.rotation.x = this._lerp(0.35, 0.90, pp);
@@ -552,17 +570,26 @@ export class AnimationStateMachine {
       headGroup.rotation.x = this._lerp(-0.20, 0.10, pp);
     } else {
       // Phase 3: Impact recovery — long and committed, slowly rise back
-      const pp = this._easeOutCubic((p - 0.65) / 0.35);
+      const raw = (p - 0.65) / 0.35;
+      const pp = this._easeOutCubic(raw);
 
       // Right arm returns to carry
       rightArmGroup.rotation.x = this._lerp(0.80, 0.20, pp);
       rightArmGroup.rotation.z = this._lerp(-0.10, -0.40, pp);
       rightForearmGroup.rotation.x = this._lerp(-1.10, -0.55, pp);
 
-      // Left arm releases and falls to side
-      leftArmGroup.rotation.x = this._lerp(0.65, 0.00, pp);
-      leftArmGroup.rotation.z = this._lerp(0.10, 0.20, pp);
-      leftForearmGroup.rotation.x = this._lerp(-1.20, -0.15, pp);
+      // Left arm: stays near grip for first 70% of recovery, releases in final 30%
+      if (raw < 0.70) {
+        const pp2 = this._easeOutCubic(raw / 0.70);
+        leftArmGroup.rotation.x = this._lerp(0.65, 0.50, pp2);
+        leftArmGroup.rotation.z = this._lerp(0.10, 0.18, pp2);
+        leftForearmGroup.rotation.x = this._lerp(-1.20, -0.90, pp2);
+      } else {
+        const pp2 = this._easeOutCubic((raw - 0.70) / 0.30);
+        leftArmGroup.rotation.x = this._lerp(0.50, 0.00, pp2);
+        leftArmGroup.rotation.z = this._lerp(0.18, 0.20, pp2);
+        leftForearmGroup.rotation.x = this._lerp(-0.90, -0.15, pp2);
+      }
 
       swordGroup.rotation.x = this._lerp(1.00, 0.90, pp);
       swordGroup.rotation.z = this._lerp(0, -0.10, pp);
@@ -701,13 +728,13 @@ export class AnimationStateMachine {
     rightArmGroup.rotation.x = 0.20 - swing * 1.20;
     rightArmGroup.rotation.z = -0.40 + swing * 0.10;
 
-    // Left arm braces the thrust — reaches forward alongside the right (2H illusion)
+    // Left arm braces the thrust — reaches forward and across body toward grip (2H illusion)
     leftArmGroup.rotation.x = 0.00 - swing * 1.10;
-    leftArmGroup.rotation.z = 0.20 - swing * 0.10;
+    leftArmGroup.rotation.z = 0.15 - swing * 0.30;
 
     // Forearms extend fully for maximum reach
     rightForearmGroup.rotation.x = -0.55 + swing * 0.30;
-    leftForearmGroup.rotation.x  = -0.15 + swing * 0.20;
+    leftForearmGroup.rotation.x  = -0.15 + swing * 0.30;
 
     // Sword points straight ahead in forearm-local space — blade forward, no body clipping
     swordGroup.rotation.x = 0.90 + swing * 0.20;

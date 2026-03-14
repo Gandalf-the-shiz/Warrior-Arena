@@ -228,6 +228,20 @@ All assets are generated at runtime — zero file loading:
 | **PR 2** — Dismemberment Overhaul | ✅ Complete | `DismembermentSystem`, `SeveredPartManager`, arterial spray VFX, gore chunks, finisher sequences |
 | **PR 3** — Performance & Stability | ✅ Complete | `PerformanceMonitor`, `QualityManager`, `ErrorHandler`, GameLoop resilience, PlayerController hot-path optimizations, docs |
 | **PR 4** — Dynamic Crowd + Audio | 🔜 Pending | Crowd reaction system, spatial audio positioning, enhanced procedural crowd synthesis |
+| **PR 5** — Sword Animation Rework | ✅ Complete | Two-handed grip illusion throughout all attacks; blade arc stays in front of body; per-attack slash audio on every swing including combo chains |
+
+### Sword Animation System
+
+`src/game/AnimationStateMachine.ts` drives all warrior animations procedurally — no skeletal rig or keyframe tracks. Key improvements in the sword animation rework:
+
+**Two-handed grip illusion**
+The greatsword is attached to `rightForearmGroup` as a child node. The left arm is an independent chain (`leftArmGroup → leftForearmGroup`). During all attack animations, the left arm's rotations are tuned so the left gauntlet (at `leftForearmGroup` local y=−0.25) visually overlaps the lower grip / pommel area of the sword. The left hand stays on the hilt through the wind-up, the active swing, and the early recovery phase (first ~65–70% of recovery), only releasing in the final portion of the recovery animation.
+
+**Blade arc in front of body**
+`swordGroup.rotation.x` (forearm-local pitch) is kept positive throughout all swing phases (≥0.20 rad), which tilts the blade forward (away from the warrior). This prevents the blade from sweeping backward through the torso. During the overhead slam wind-up, the blade is pitched backward behind the head (positive x on a raised forearm maps to rearward in world space), then drives forward and down through the slam arc.
+
+**Per-swing slash audio**
+`src/main.ts` tracks `prevAttackState` (the specific `AnimState` enum value) rather than a boolean `prevAttacking` flag. This means every attack state transition — including consecutive states in a 3-hit combo (ATTACK_LIGHT_1 → ATTACK_LIGHT_2 → ATTACK_LIGHT_3) — fires a new `playSlash()` + `playGrunt()` call.
 
 ---
 
