@@ -301,6 +301,7 @@ async function main(): Promise<void> {
 
   // ── Audio state tracking ───────────────────────────────────────────────
   let prevAttacking = false;
+  let prevAttackState: string | null = null;
   let prevDodging = false;
   let prevPlayerHp = player.hp;
   let prevPlayerDead = false;
@@ -399,7 +400,10 @@ async function main(): Promise<void> {
 
       // ── Audio triggers ────────────────────────────────────────────────
       const nowAttacking = player.isAttackingState();
-      if (nowAttacking && !prevAttacking) {
+      const currentAttackState = nowAttacking ? player.anim.currentState : null;
+      // Fire slash on every attack state transition — including combo chains
+      // (attack-to-attack transitions keep nowAttacking=true so prevAttacking alone misses them)
+      if (currentAttackState !== null && currentAttackState !== prevAttackState) {
         audio.playSlash();
         audio.playGrunt();
         // First hit of wave triggers crowd roar
@@ -409,6 +413,7 @@ async function main(): Promise<void> {
         }
       }
       prevAttacking = nowAttacking;
+      prevAttackState = currentAttackState;
 
       const nowDodging = player.anim.currentState === 'DODGE';
       if (nowDodging && !prevDodging) audio.playDodge();
