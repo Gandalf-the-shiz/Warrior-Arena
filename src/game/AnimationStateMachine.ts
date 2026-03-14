@@ -201,13 +201,13 @@ export class AnimationStateMachine {
     headGroup.rotation.z = Math.sin(time * 0.55) * 0.018;
     headGroup.rotation.y = Math.sin(time * 0.3) * 0.04;
 
-    // Right arm holds sword at side — relaxed carry pose
+    // Right arm holds sword at side — carry pose with blade angled 45-65° upward
     const breathSway = breathCycle * 0.015;
-    const rightShoulderTarget = 0.15 + breathSway;
+    const rightShoulderTarget = 0.20 + breathSway;
     this._smoothRightArmX = this._lerp(this._smoothRightArmX, rightShoulderTarget, lerpRate * 0.5);
     rightArmGroup.rotation.x = this._smoothRightArmX;
-    rightArmGroup.rotation.z = -0.20 - Math.sin(time * 0.6) * 0.008;
-    rightForearmGroup.rotation.x = -0.35 + breathCycle * 0.015;
+    rightArmGroup.rotation.z = -0.40 - Math.sin(time * 0.6) * 0.008;
+    rightForearmGroup.rotation.x = -0.55 + breathCycle * 0.015;
 
     // Left arm hangs freely at side — no sword grip
     const leftShoulderTarget = breathSway;
@@ -222,9 +222,9 @@ export class AnimationStateMachine {
     leftLegGroup.rotation.x  = this._smoothLeftLegX;
     rightLegGroup.rotation.x = this._smoothRightLegX;
 
-    // Sword sways gently in right hand (forearm-local space)
+    // Sword sways gently in right hand (forearm-local space) — 45-65° carry angle
     swordGroup.rotation.z = Math.sin(time * 0.75) * 0.04 - 0.10;
-    swordGroup.rotation.x = 0.15 + breathCycle * 0.018;
+    swordGroup.rotation.x = 0.90 + breathCycle * 0.018;
 
     // Torso lean reset
     this._smoothTorsoRotX = this._lerp(this._smoothTorsoRotX, 0, lerpRate * 0.5);
@@ -256,10 +256,10 @@ export class AnimationStateMachine {
 
     // Right arm: carries sword with slight counter-stride bob
     const rightArmBob = -Math.sin(phase) * 0.20 * speed;
-    const rightShoulderTarget = 0.15 + rightArmBob;
+    const rightShoulderTarget = 0.20 + rightArmBob;
     this._smoothRightArmX = this._lerp(this._smoothRightArmX, rightShoulderTarget, lerpRate * 1.5);
     rightArmGroup.rotation.x = this._smoothRightArmX;
-    rightArmGroup.rotation.z = -0.20;
+    rightArmGroup.rotation.z = -0.40;
 
     // Left arm: natural arm pump — opposite to left leg (in phase with right leg)
     const leftArmPump = Math.sin(phase) * 0.50 * speed;
@@ -269,7 +269,7 @@ export class AnimationStateMachine {
     leftArmGroup.rotation.z = 0.20;
 
     // Forearms maintain natural bend with slight oscillation
-    rightForearmGroup.rotation.x = -0.35 + Math.sin(phase) * 0.04 * speed;
+    rightForearmGroup.rotation.x = -0.55 + Math.sin(phase) * 0.04 * speed;
     leftForearmGroup.rotation.x  = -0.15 + Math.sin(phase) * 0.05 * speed;
 
     // Hip rotation
@@ -295,9 +295,9 @@ export class AnimationStateMachine {
     this._smoothTorsoRotZ = this._lerp(this._smoothTorsoRotZ, sideTiltTarget, lerpRate);
     torsoGroup.rotation.z = this._smoothTorsoRotZ;
 
-    // Sword tilts slightly with each step (forearm-local space)
+    // Sword tilts slightly with each step (forearm-local space) — maintains 45-65° carry angle
     swordGroup.rotation.z = Math.sin(phase) * 0.05 * speed - 0.10;
-    swordGroup.rotation.x = 0.15 + Math.sin(phase) * 0.04 * speed;
+    swordGroup.rotation.x = 0.90 + Math.sin(phase) * 0.04 * speed;
   }
 
   // ── Dodge ───────────────────────────────────────────────────────────────
@@ -320,9 +320,9 @@ export class AnimationStateMachine {
 
     // Right arm tucks sword close during roll — more elbow bend
     const tuck = Math.sin(p * Math.PI);
-    rightForearmGroup.rotation.x = -0.35 - tuck * 0.50;
-    rightArmGroup.rotation.x = 0.15 + tuck * 0.30;
-    rightArmGroup.rotation.z = -0.20;
+    rightForearmGroup.rotation.x = -0.55 - tuck * 0.50;
+    rightArmGroup.rotation.x = 0.20 + tuck * 0.30;
+    rightArmGroup.rotation.z = -0.40;
 
     // Left arm swings freely during dodge
     leftForearmGroup.rotation.x = -0.15 - tuck * 0.20;
@@ -348,9 +348,9 @@ export class AnimationStateMachine {
       torsoGroup.rotation.z = 0;
 
       // Right arm pulls sword to the right side
-      rightArmGroup.rotation.x = this._lerp(0.15, 0.30, pp);
-      rightArmGroup.rotation.z = this._lerp(-0.20, -0.70, pp);
-      rightForearmGroup.rotation.x = this._lerp(-0.35, -0.50, pp);
+      rightArmGroup.rotation.x = this._lerp(0.20, 0.30, pp);
+      rightArmGroup.rotation.z = this._lerp(-0.40, -0.70, pp);
+      rightForearmGroup.rotation.x = this._lerp(-0.55, -0.50, pp);
 
       // Left arm reaches inward to grip the sword handle
       leftArmGroup.rotation.x = this._lerp(0.00, 0.40, pp);
@@ -358,7 +358,7 @@ export class AnimationStateMachine {
       leftForearmGroup.rotation.x = this._lerp(-0.15, -0.65, pp);
 
       // Blade angled forward in forearm space — prevents body clipping on swing
-      swordGroup.rotation.x = this._lerp(0.15, 0.45, pp);
+      swordGroup.rotation.x = this._lerp(0.90, 0.45, pp);
       swordGroup.rotation.z = this._lerp(-0.10, -0.25, pp);
 
       headGroup.rotation.y = -0.15 * pp;
@@ -392,16 +392,16 @@ export class AnimationStateMachine {
       torsoGroup.position.y = 0.05;
 
       // Right arm recovers to carry
-      rightArmGroup.rotation.x = this._lerp(0.55, 0.15, pp);
-      rightArmGroup.rotation.z = this._lerp(0.50, -0.20, pp);
-      rightForearmGroup.rotation.x = this._lerp(-0.85, -0.35, pp);
+      rightArmGroup.rotation.x = this._lerp(0.55, 0.20, pp);
+      rightArmGroup.rotation.z = this._lerp(0.50, -0.40, pp);
+      rightForearmGroup.rotation.x = this._lerp(-0.85, -0.55, pp);
 
       // Left arm releases and returns to side
       leftArmGroup.rotation.x = this._lerp(0.60, 0.00, pp);
       leftArmGroup.rotation.z = this._lerp(0.40, 0.20, pp);
       leftForearmGroup.rotation.x = this._lerp(-0.90, -0.15, pp);
 
-      swordGroup.rotation.x = this._lerp(0.30, 0.15, pp);
+      swordGroup.rotation.x = this._lerp(0.30, 0.90, pp);
       swordGroup.rotation.z = this._lerp(-0.15, -0.10, pp);
 
       headGroup.rotation.y = this._lerp(0.10, 0, pp);
@@ -426,9 +426,9 @@ export class AnimationStateMachine {
       torsoGroup.position.y = 0.05;
 
       // Right arm reaches across to left side, low
-      rightArmGroup.rotation.x = this._lerp(0.15, 0.30, pp);
-      rightArmGroup.rotation.z = this._lerp(-0.20, 0.55, pp);
-      rightForearmGroup.rotation.x = this._lerp(-0.35, -0.50, pp);
+      rightArmGroup.rotation.x = this._lerp(0.20, 0.30, pp);
+      rightArmGroup.rotation.z = this._lerp(-0.40, 0.55, pp);
+      rightForearmGroup.rotation.x = this._lerp(-0.55, -0.50, pp);
 
       // Left arm grips near the lower grip / pommel area
       leftArmGroup.rotation.x = this._lerp(0.00, 0.25, pp);
@@ -437,7 +437,7 @@ export class AnimationStateMachine {
 
       // Sword tilts forward in forearm space — prevents clipping on upswing
       swordGroup.rotation.z = this._lerp(-0.10, 0.25, pp);
-      swordGroup.rotation.x = this._lerp(0.15, 0.20, pp);
+      swordGroup.rotation.x = this._lerp(0.90, 0.20, pp);
 
       leftLegGroup.rotation.x = 0.15 * pp;
     } else if (p < 0.55) {
@@ -470,9 +470,9 @@ export class AnimationStateMachine {
       torsoGroup.rotation.z = 0;
 
       // Right arm returns to carry
-      rightArmGroup.rotation.x = this._lerp(0.70, 0.15, pp);
-      rightArmGroup.rotation.z = this._lerp(-0.25, -0.20, pp);
-      rightForearmGroup.rotation.x = this._lerp(-1.00, -0.35, pp);
+      rightArmGroup.rotation.x = this._lerp(0.70, 0.20, pp);
+      rightArmGroup.rotation.z = this._lerp(-0.25, -0.40, pp);
+      rightForearmGroup.rotation.x = this._lerp(-1.00, -0.55, pp);
 
       // Left arm releases and falls back to side
       leftArmGroup.rotation.x = this._lerp(0.65, 0.00, pp);
@@ -480,7 +480,7 @@ export class AnimationStateMachine {
       leftForearmGroup.rotation.x = this._lerp(-1.05, -0.15, pp);
 
       swordGroup.rotation.z = this._lerp(-0.40, -0.10, pp);
-      swordGroup.rotation.x = this._lerp(0.35, 0.15, pp);
+      swordGroup.rotation.x = this._lerp(0.35, 0.90, pp);
 
       leftLegGroup.rotation.x = 0;
     }
@@ -502,9 +502,9 @@ export class AnimationStateMachine {
       const pp = this._easeOutCubic(p / 0.40);
 
       // Right arm (sword arm) rises way above head
-      rightArmGroup.rotation.x = this._lerp(0.15, -1.60, pp);
-      rightArmGroup.rotation.z = this._lerp(-0.20, -0.10, pp);
-      rightForearmGroup.rotation.x = this._lerp(-0.35, -0.20, pp);
+      rightArmGroup.rotation.x = this._lerp(0.20, -1.60, pp);
+      rightArmGroup.rotation.z = this._lerp(-0.40, -0.10, pp);
+      rightForearmGroup.rotation.x = this._lerp(-0.55, -0.20, pp);
 
       // Left arm also lifts to grip near the lower handle
       leftArmGroup.rotation.x = this._lerp(0.00, -1.40, pp);
@@ -512,7 +512,7 @@ export class AnimationStateMachine {
       leftForearmGroup.rotation.x = this._lerp(-0.15, -0.15, pp);
 
       // Sword rises overhead in forearm space — blade stays pitched forward (positive x = forward tilt)
-      swordGroup.rotation.x = this._lerp(0.15, 0.80, pp);
+      swordGroup.rotation.x = this._lerp(0.90, 0.80, pp);
       swordGroup.rotation.z = this._lerp(-0.10, 0, pp);
 
       // Warrior rises slightly, torso arches back
@@ -555,16 +555,16 @@ export class AnimationStateMachine {
       const pp = this._easeOutCubic((p - 0.65) / 0.35);
 
       // Right arm returns to carry
-      rightArmGroup.rotation.x = this._lerp(0.80, 0.15, pp);
-      rightArmGroup.rotation.z = this._lerp(-0.10, -0.20, pp);
-      rightForearmGroup.rotation.x = this._lerp(-1.10, -0.35, pp);
+      rightArmGroup.rotation.x = this._lerp(0.80, 0.20, pp);
+      rightArmGroup.rotation.z = this._lerp(-0.10, -0.40, pp);
+      rightForearmGroup.rotation.x = this._lerp(-1.10, -0.55, pp);
 
       // Left arm releases and falls to side
       leftArmGroup.rotation.x = this._lerp(0.65, 0.00, pp);
       leftArmGroup.rotation.z = this._lerp(0.10, 0.20, pp);
       leftForearmGroup.rotation.x = this._lerp(-1.20, -0.15, pp);
 
-      swordGroup.rotation.x = this._lerp(1.00, 0.15, pp);
+      swordGroup.rotation.x = this._lerp(1.00, 0.90, pp);
       swordGroup.rotation.z = this._lerp(0, -0.10, pp);
 
       torsoGroup.rotation.x = this._lerp(0.30, 0, pp);
@@ -622,8 +622,8 @@ export class AnimationStateMachine {
 
     const curl = Math.sin(p * Math.PI) * 0.4;
     // Right arm curls sword close protectively
-    rightForearmGroup.rotation.x = -0.35 - curl;
-    rightArmGroup.rotation.x = 0.15 + curl * 0.5;
+    rightForearmGroup.rotation.x = -0.55 - curl;
+    rightArmGroup.rotation.x = 0.20 + curl * 0.5;
 
     // Left arm reacts independently — jerks back from impact
     leftArmGroup.rotation.x = 0.00 + curl * 0.3;
@@ -650,9 +650,9 @@ export class AnimationStateMachine {
       torsoGroup.position.y    = 0.05 - pp * 0.5;
 
       // Right arm drops limply — sword loosens from grip
-      rightArmGroup.rotation.x = this._lerp(0.15, 1.20, pp);
-      rightArmGroup.rotation.z = this._lerp(-0.20, -0.65, pp);
-      rightForearmGroup.rotation.x = this._lerp(-0.35, -0.20, pp);
+      rightArmGroup.rotation.x = this._lerp(0.20, 1.20, pp);
+      rightArmGroup.rotation.z = this._lerp(-0.40, -0.65, pp);
+      rightForearmGroup.rotation.x = this._lerp(-0.55, -0.20, pp);
 
       // Left arm drops limply
       leftArmGroup.rotation.x = this._lerp(0.00, 1.20, pp);
@@ -660,7 +660,7 @@ export class AnimationStateMachine {
       leftForearmGroup.rotation.x = this._lerp(-0.15, -0.30, pp);
 
       // Sword rotates away as grip loosens (forearm-local space)
-      swordGroup.rotation.x = this._lerp(0.15, 1.40, pp);
+      swordGroup.rotation.x = this._lerp(0.90, 1.40, pp);
     } else {
       // Fall forward face-down — sword fully dropped
       const pp = (p - 0.4) / 0.6;
@@ -698,19 +698,19 @@ export class AnimationStateMachine {
     torsoGroup.rotation.y = 0;
 
     // Right arm thrusts sword directly forward
-    rightArmGroup.rotation.x = 0.15 - swing * 1.20;
-    rightArmGroup.rotation.z = -0.20 + swing * 0.10;
+    rightArmGroup.rotation.x = 0.20 - swing * 1.20;
+    rightArmGroup.rotation.z = -0.40 + swing * 0.10;
 
     // Left arm braces the thrust — reaches forward alongside the right (2H illusion)
     leftArmGroup.rotation.x = 0.00 - swing * 1.10;
     leftArmGroup.rotation.z = 0.20 - swing * 0.10;
 
     // Forearms extend fully for maximum reach
-    rightForearmGroup.rotation.x = -0.35 + swing * 0.30;
+    rightForearmGroup.rotation.x = -0.55 + swing * 0.30;
     leftForearmGroup.rotation.x  = -0.15 + swing * 0.20;
 
     // Sword points straight ahead in forearm-local space — blade forward, no body clipping
-    swordGroup.rotation.x = 0.15 + swing * 0.20;
+    swordGroup.rotation.x = 0.90 + swing * 0.20;
     swordGroup.rotation.z = -0.10 * (1 - swing);
 
     torsoGroup.scale.set(1, 1, 1);
